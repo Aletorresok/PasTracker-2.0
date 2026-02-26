@@ -99,6 +99,15 @@ async function loadStorage(key) {
       data.forEach(row => { result[row.pas_id] = row.fecha_recordatorio })
       return result
     }
+    if (key === 'pas_lista') {
+      const { data } = await supabase.from('pas_lista').select('*').order('pas_id')
+      if (!data || data.length === 0) return null
+      return data.map(row => ({
+        id: row.pas_id, nombre: row.nombre, mail: row.mail,
+        telefonos: row.telefonos || [], contacto: row.contacto,
+        respuesta: row.respuesta, seguimiento: row.seguimiento, prioridad: row.prioridad
+      }))
+    }
   } catch { return null }
 }
 
@@ -136,6 +145,15 @@ async function saveStorage(key, val) {
       await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id, fecha]) => ({ pas_id: Number(pas_id), fecha_recordatorio: fecha }))
       if (rows.length) await supabase.from('pas_recordatorios').insert(rows)
+    }
+    if (key === 'pas_lista') {
+      await supabase.from('pas_lista').delete().neq('pas_id', -1)
+      const rows = val.map(p => ({
+        pas_id: p.id, nombre: p.nombre, mail: p.mail,
+        telefonos: p.telefonos, contacto: p.contacto,
+        respuesta: p.respuesta, seguimiento: p.seguimiento, prioridad: p.prioridad
+      }))
+      if (rows.length) await supabase.from('pas_lista').insert(rows)
     }
   } catch (e) { console.error(e) }
 }
@@ -822,6 +840,7 @@ export default function App() {
   const PER_PAGE = 40;
 
   useEffect(() => {
+    loadStorage("pas_lista").then(l => l && setPas(l));
     loadStorage("pas_historial").then(h => h && setHistorial(h));
     loadStorage("pas_casos").then(c => c && setCasos(c));
     loadStorage("pas_derivadores").then(d => d && setDerivadores(d));
@@ -832,11 +851,14 @@ export default function App() {
     const file = e.target.files[0]; if (!file) return;
     setLoading(true);
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       const wb = XLSX.read(ev.target.result, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
-      setPas(parsePAS(rows)); setLoading(false);
+      const lista = parsePAS(rows);
+      setPas(lista);
+      await saveStorage("pas_lista", lista);
+      setLoading(false);
     };
     reader.readAsArrayBuffer(file);
   }, []);
