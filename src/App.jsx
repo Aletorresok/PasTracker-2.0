@@ -100,7 +100,23 @@ async function loadStorage(key) {
       return result
     }
     if (key === 'pas_lista') {
-      const { data } = await supabase.from('pas_lista').select('*').order('pas_id')
+  let allData = [];
+  let from = 0;
+  const CHUNK = 1000;
+  while (true) {
+    const { data, error } = await supabase.from('pas_lista').select('*').order('pas_id').range(from, from + CHUNK - 1);
+    if (error || !data || data.length === 0) break;
+    allData = [...allData, ...data];
+    if (data.length < CHUNK) break;
+    from += CHUNK;
+  }
+  if (allData.length === 0) return null;
+  return allData.map(row => ({
+    id: row.pas_id, nombre: row.nombre, mail: row.mail,
+    telefonos: row.telefonos || [], contacto: row.contacto,
+    respuesta: row.respuesta, seguimiento: row.seguimiento, prioridad: row.prioridad
+  }))
+}
       if (!data || data.length === 0) return null
       return data.map(row => ({
         id: row.pas_id, nombre: row.nombre, mail: row.mail,
