@@ -41,7 +41,7 @@ function parsePAS(rows) {
 function primerNombre(nombre) {
   if (!nombre) return "";
   const parts = nombre.trim().split(/\s+/);
-  const raw = parts[parts.length - 1];
+  const raw = parts.length >= 2 ? parts[1] : parts[0];
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 function waLink(phone, nombre) {
