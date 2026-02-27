@@ -623,13 +623,57 @@ function ClienteCard({ pas, casos, onAddCaso, onEditCaso, onDeleteCaso, expanded
   );
 }
 
+// ── NUEVO CLIENTE MODAL ───────────────────────────────────────────────────────
+function NuevoClienteModal({ onClose, onSave, darkMode }) {
+  const [nombre, setNombre] = useState("");
+  const [mail, setMail]     = useState("");
+  const [tel, setTel]       = useState("");
+  const iStyle = darkMode ? IS : IS_LIGHT;
+  const lStyle = darkMode ? LS : LS_LIGHT;
+  const ok = nombre.trim().length > 0;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.78)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: darkMode ? "#0f172a" : "#fff", border: `1px solid ${darkMode ? "#334155" : "#e2e8f0"}`, borderRadius: 16, width: "100%", maxWidth: 440, padding: 28, boxShadow: "0 24px 60px #000b" }}>
+        <div style={{ marginBottom: 20 }}>
+          <span style={lStyle}>Nuevo cliente PAS</span>
+          <div style={{ fontSize: 18, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#1e293b", marginTop: 4 }}>Agregar manualmente</div>
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Para PAS que no están en el Excel o que te contactaron directamente</div>
+        </div>
+
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={lStyle}>Nombre *</span>
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: GARCIA JUAN CARLOS" style={iStyle} autoFocus />
+        </label>
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={lStyle}>Mail</span>
+          <input value={mail} onChange={e => setMail(e.target.value)} placeholder="juan@mail.com" style={iStyle} />
+        </label>
+        <label style={{ display: "block", marginBottom: 22 }}>
+          <span style={lStyle}>Teléfono</span>
+          <input value={tel} onChange={e => setTel(e.target.value)} placeholder="1123456789" style={iStyle} />
+        </label>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: darkMode ? "#1e293b" : "#f1f5f9", border: `1px solid ${darkMode ? "#334155" : "#e2e8f0"}`, borderRadius: 10, color: darkMode ? "#94a3b8" : "#64748b", padding: "10px", cursor: "pointer", fontSize: 14 }}>Cancelar</button>
+          <button onClick={() => { if (ok) onSave({ nombre: nombre.trim().toUpperCase(), mail: mail.trim(), tel: tel.trim() }); }}
+            style={{ flex: 2, background: ok ? "#22c55e" : "#1e293b", border: "none", borderRadius: 10, color: ok ? "white" : "#475569", padding: "10px", cursor: ok ? "pointer" : "default", fontSize: 14, fontWeight: 700, transition: "all .2s" }}>
+            Agregar cliente ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TAB CLIENTES ──────────────────────────────────────────────────────────────
-function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
+function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, onAgregarCliente }) {
   const [modalPas, setModalPas] = useState(null);
   const [casoEdit, setCasoEdit]  = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [busqueda, setBusqueda]  = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [modalNuevoCliente, setModalNuevoCliente] = useState(false);
 
   const clientes = useMemo(() => pas.filter(p => derivadores[p.id]), [pas, derivadores]);
 
@@ -694,7 +738,8 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="🔍  Buscar entre tus clientes PAS..."
           style={{ ...iStyle, flex: 1, minWidth: 180 }} />
-        <button onClick={exportarExcel} style={{ background: "#22c55e22", border: "1px solid #22c55e44", borderRadius: 8, color: "#22c55e", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>⬇ Exportar Excel</button>
+        <button onClick={() => setModalNuevoCliente(true)} style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#818cf8", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>+ Nuevo</button>
+        <button onClick={exportarExcel} style={{ background: "#22c55e22", border: "1px solid #22c55e44", borderRadius: 8, color: "#22c55e", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>⬇ Excel</button>
       </div>
 
       {/* Filtro pipeline */}
@@ -732,6 +777,12 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
         <CasoModal pasNombre={modalPas.nombre} casoEdit={casoEdit} darkMode={darkMode}
           onClose={() => { setModalPas(null); setCasoEdit(null); }}
           onSave={data => handleSave(modalPas.id, data)} />
+      )}
+
+      {modalNuevoCliente && (
+        <NuevoClienteModal darkMode={darkMode}
+          onClose={() => setModalNuevoCliente(false)}
+          onSave={d => { onAgregarCliente(d); setModalNuevoCliente(false); }} />
       )}
     </div>
   );
@@ -897,6 +948,20 @@ export default function App() {
     setDerivadores(updated); await saveStorage("pas_derivadores", updated);
   }, [derivadores]);
 
+  const handleAgregarCliente = useCallback(async ({ nombre, mail, tel }) => {
+    // Genera un ID único negativo para no colisionar con los del Excel
+    const nuevoId = -(Date.now());
+    const telefonos = tel ? [tel.replace(/\D/g, "")] : [];
+    const nuevoPas = { id: nuevoId, nombre, mail, telefonos, contacto: "", respuesta: "", seguimiento: "", prioridad: telefonos.length === 1 ? "agendado" : "sin_tel" };
+    const updatedPas = [...pas, nuevoPas];
+    setPas(updatedPas);
+    await saveStorage("pas_lista", updatedPas);
+    // Marcarlo automáticamente como derivador
+    const updatedDer = { ...derivadores, [nuevoId]: true };
+    setDerivadores(updatedDer);
+    await saveStorage("pas_derivadores", updatedDer);
+  }, [pas, derivadores]);
+
   const filtered = useMemo(() => {
     let list = pas.filter(p => p.prioridad === vista || vista === "todos");
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
@@ -1040,7 +1105,7 @@ export default function App() {
         )}
 
         {!loading && pas.length > 0 && mainTab === "clientes" && (
-          <TabClientes pas={pas} casos={casos} derivadores={derivadores} onSaveCasos={handleSaveCasos} darkMode={darkMode} />
+          <TabClientes pas={pas} casos={casos} derivadores={derivadores} onSaveCasos={handleSaveCasos} darkMode={darkMode} onAgregarCliente={handleAgregarCliente} />
         )}
       </div>
 
