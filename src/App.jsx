@@ -738,6 +738,37 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
+const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+function GraficoBarras({ datos, darkMode }) {
+  const maxVal = Math.max(...datos.map(d => d.valor), 1);
+  const cardBg = darkMode ? "#0a0f1e" : "#fff";
+  const subColor = darkMode ? "#475569" : "#94a3b8";
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 100, paddingBottom: 20, position: "relative" }}>
+      {datos.map((d, i) => {
+        const pct = (d.valor / maxVal) * 100;
+        const esActual = i === datos.length - 1;
+        return (
+          <div key={d.mes} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, height: "100%" }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%" }}>
+              {d.valor > 0 && (
+                <div title={`${d.mes}: ${fmtMoney(d.valor)}`} style={{ width: "100%", height: `${pct}%`, minHeight: 3, background: esActual ? "#6366f1" : darkMode ? "#334155" : "#e2e8f0", borderRadius: "3px 3px 0 0", transition: "height .3s", position: "relative", cursor: "default" }}>
+                  {esActual && d.valor > 0 && (
+                    <div style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", fontSize: 9, color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtMoney(d.valor)}</div>
+                  )}
+                </div>
+              )}
+              {d.valor === 0 && <div style={{ width: "100%", height: 3, background: darkMode ? "#1e293b" : "#f1f5f9", borderRadius: 3 }} />}
+            </div>
+            <div style={{ fontSize: 9, color: esActual ? "#6366f1" : subColor, fontWeight: esActual ? 700 : 400, marginTop: 2 }}>{d.mes}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkMode }) {
   const allCasos = useMemo(() => Object.values(casos).flat(), [casos]);
   const totalCobradoYo     = allCasos.reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
@@ -750,22 +781,63 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const positivos          = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo"))).length;
 
   const hoyStr = new Date().toISOString().slice(0, 10);
+  const hoy = new Date();
 
-  // Recordatorios de contactos PAS vencidos o para hoy
-  const recsPAS = pas.filter(p => {
-    const r = recordatorios?.[p.id];
-    return r && r <= hoyStr;
-  });
+  // ── Facturación por mes (últimos 12 meses) ──
+  const facturacionMensual = useMemo(() => {
+    const mapa = {};
+    allCasos.forEach(c => {
+      if (c.estado === "cobrado" && c.monto_cobro_yo && c.fecha_ultimo_movimiento) {
+        const fecha = new Date(c.fecha_ultimo_movimiento);
+        const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+        mapa[key] = (mapa[key] || 0) + Number(c.monto_cobro_yo);
+      }
+    });
+    const datos = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      datos.push({ mes: MESES[d.getMonth()], key, valor: mapa[key] || 0 });
+    }
+    return datos;
+  }, [allCasos]);
 
-  // Recordatorios de casos vencidos o para hoy
+  // ── Año actual vs año anterior ──
+  const anoActual = hoy.getFullYear();
+  const cobradoEsteAno  = allCasos.filter(c => c.estado === "cobrado" && c.fecha_ultimo_movimiento?.startsWith(String(anoActual))).reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
+  const cobradoAnoAnt   = allCasos.filter(c => c.estado === "cobrado" && c.fecha_ultimo_movimiento?.startsWith(String(anoActual - 1))).reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
+  const varAnual = cobradoAnoAnt > 0 ? Math.round(((cobradoEsteAno - cobradoAnoAnt) / cobradoAnoAnt) * 100) : null;
+
+  // ── Mes actual ──
+  const mesKey = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+  const cobradoEsteMes = facturacionMensual.find(d => d.key === mesKey)?.valor || 0;
+  const mesAntKey = `${hoy.getFullYear()}-${String(hoy.getMonth()).padStart(2, "0")}`;
+  const cobradoMesAnt = facturacionMensual.find(d => d.key === mesAntKey)?.valor || 0;
+  const varMensual = cobradoMesAnt > 0 ? Math.round(((cobradoEsteMes - cobradoMesAnt) / cobradoMesAnt) * 100) : null;
+
+  // ── Ranking PAS ──
+  const rankingPAS = useMemo(() => {
+    return Object.entries(casos)
+      .map(([pasId, casosList]) => {
+        const pasObj = pas.find(p => p.id === Number(pasId));
+        const cobrado = casosList.reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
+        const total = casosList.length;
+        const activos = casosList.filter(c => c.estado !== "cobrado").length;
+        return { nombre: pasObj?.nombre || "PAS desconocido", cobrado, total, activos };
+      })
+      .filter(p => p.total > 0)
+      .sort((a, b) => b.cobrado - a.cobrado || b.total - a.total)
+      .slice(0, 8);
+  }, [casos, pas]);
+
+  const maxCobrado = rankingPAS.length ? Math.max(...rankingPAS.map(p => p.cobrado), 1) : 1;
+
+  // Recordatorios
+  const recsPAS = pas.filter(p => { const r = recordatorios?.[p.id]; return r && r <= hoyStr; });
   const recsCasos = [];
   Object.entries(casos).forEach(([pasId, casosList]) => {
     const pasObj = pas.find(p => p.id === Number(pasId));
-    casosList.forEach(c => {
-      if (c.recordatorio && c.recordatorio <= hoyStr) {
-        recsCasos.push({ ...c, pasNombre: pasObj?.nombre || "PAS desconocido" });
-      }
-    });
+    casosList.forEach(c => { if (c.recordatorio && c.recordatorio <= hoyStr) recsCasos.push({ ...c, pasNombre: pasObj?.nombre || "PAS desconocido" }); });
   });
 
   const cardBg = darkMode ? "#0f172a" : "#f8fafc";
@@ -775,30 +847,86 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Resumen general</div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+      {/* ── Resumen general ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Resumen general</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <StatCard label="Total cobrado" value={fmtMoney(totalCobradoYo)} color="#6366f1" dark={darkMode} />
-        <StatCard label="En pipeline" value={fmtMoney(totalPendiente)} color="#06b6d4" sub="esperando cobro" dark={darkMode} />
+        <StatCard label="Esperando cobro" value={fmtMoney(totalPendiente)} color="#06b6d4" dark={darkMode} />
         <StatCard label="Comisiones PAS" value={fmtMoney(totalComisionesPAS)} color="#eab308" dark={darkMode} />
         <StatCard label="Casos cobrados" value={cobrados} color="#22c55e" sub={`${enGestion} en gestión`} dark={darkMode} />
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
-        <StatCard label="PAS contactados" value={contactados} color="#6366f1" sub={`de ${pas.length} totales`} dark={darkMode} />
-        <StatCard label="PAS positivos" value={positivos} color="#22c55e" dark={darkMode} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 18 }}>
+        <StatCard label="Contactados" value={contactados} color="#6366f1" sub={`de ${pas.length}`} dark={darkMode} />
+        <StatCard label="Positivos" value={positivos} color="#22c55e" dark={darkMode} />
         <StatCard label="Derivadores" value={nDerivadores} color="#eab308" dark={darkMode} />
       </div>
 
-      {/* Pipeline visual */}
-      <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Estado del pipeline</div>
+      {/* ── Facturación ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Facturación</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+        <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>Este mes</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#6366f1" }}>{fmtMoney(cobradoEsteMes)}</div>
+          {varMensual !== null && (
+            <div style={{ fontSize: 11, color: varMensual >= 0 ? "#22c55e" : "#ef4444", marginTop: 3 }}>
+              {varMensual >= 0 ? "▲" : "▼"} {Math.abs(varMensual)}% vs mes anterior
+            </div>
+          )}
+        </div>
+        <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>{anoActual}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#6366f1" }}>{fmtMoney(cobradoEsteAno)}</div>
+          {varAnual !== null && (
+            <div style={{ fontSize: 11, color: varAnual >= 0 ? "#22c55e" : "#ef4444", marginTop: 3 }}>
+              {varAnual >= 0 ? "▲" : "▼"} {Math.abs(varAnual)}% vs {anoActual - 1}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Gráfico de barras */}
+      <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px 14px 8px", marginBottom: 18 }}>
+        <div style={{ fontSize: 11, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>Últimos 12 meses</div>
+        <GraficoBarras datos={facturacionMensual} darkMode={darkMode} />
+      </div>
+
+      {/* ── Ranking PAS ── */}
+      {rankingPAS.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Ranking PAS</div>
+          <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
+            {rankingPAS.map((p, i) => (
+              <div key={p.nombre} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: i < rankingPAS.length - 1 ? 12 : 0 }}>
+                {/* posición */}
+                <div style={{ width: 22, fontSize: 13, fontWeight: 800, color: i === 0 ? "#eab308" : i === 1 ? "#94a3b8" : i === 2 ? "#f97316" : subColor, textAlign: "center", flexShrink: 0 }}>
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`}
+                </div>
+                {/* nombre + barra */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60%" }}>{p.nombre}</div>
+                    <div style={{ fontSize: 12, color: "#6366f1", fontWeight: 700, flexShrink: 0 }}>{p.cobrado > 0 ? fmtMoney(p.cobrado) : <span style={{ color: subColor }}>en gestión</span>}</div>
+                  </div>
+                  <div style={{ height: 5, background: darkMode ? "#1e293b" : "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.max((p.cobrado / maxCobrado) * 100, p.total > 0 ? 5 : 0)}%`, background: i === 0 ? "#eab308" : "#6366f1", borderRadius: 3, transition: "width .4s" }} />
+                  </div>
+                  <div style={{ fontSize: 10, color: subColor, marginTop: 3 }}>{p.total} caso{p.total !== 1 ? "s" : ""}{p.activos > 0 ? ` · ${p.activos} activo${p.activos !== 1 ? "s" : ""}` : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Pipeline ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Pipeline</div>
+      <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {ESTADOS_CASO.map(e => { const cnt = allCasos.filter(c => c.estado === e.key).length; return <div key={e.key} style={{ flex: 1, minWidth: 70, background: cnt > 0 ? e.color + "18" : darkMode ? "#0a0f1e" : "#fff", border: `1px solid ${cnt > 0 ? e.color + "44" : cardBorder}`, borderRadius: 10, padding: "10px 6px", textAlign: "center" }}><div style={{ fontSize: 20, marginBottom: 4 }}>{e.emoji}</div><div style={{ fontSize: 22, fontWeight: 800, color: cnt > 0 ? e.color : "#334155" }}>{cnt}</div><div style={{ fontSize: 10, color: cnt > 0 ? e.color + "99" : "#334155", marginTop: 2, lineHeight: 1.2 }}>{e.label}</div></div>; })}
         </div>
       </div>
 
-      {/* Recordatorios */}
+      {/* ── Recordatorios ── */}
       {(recsPAS.length > 0 || recsCasos.length > 0) && (
         <div style={{ background: "#f9741611", border: "1px solid #f9741644", borderRadius: 12, padding: "14px", marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: "#f97316", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12, fontWeight: 700 }}>⏰ Recordatorios pendientes</div>
@@ -822,7 +950,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
           ))}
         </div>
       )}
-
       {recsPAS.length === 0 && recsCasos.length === 0 && (
         <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "16px 14px", textAlign: "center" }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
