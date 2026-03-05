@@ -971,7 +971,7 @@ export default function App() {
   const [mainTab, setMainTab]       = useState("dashboard");
   const [vista, setVista]           = useState("agendado");
   const [busqueda, setBusqueda]     = useState("");
-  const [filtroResp, setFiltroResp] = useState("todos");
+  const [filtroResp, setFiltroResp] = useState("sin_contactar");
   const [modalPas, setModalPas]     = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [page, setPage]             = useState(0);
@@ -1063,13 +1063,23 @@ export default function App() {
   const filtered = useMemo(() => {
     let list = pas.filter(p => p.prioridad === vista || vista === "todos");
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
-    if (filtroResp === "sin_contactar") list = list.filter(p => !(historial[p.id] || []).length);
-    else if (filtroResp === "positivo") list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
-    else if (filtroResp === "volver")   list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
-    else if (filtroResp === "negativo") list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
-    else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
+    if (mainTab === "contactos") {
+      list = list.filter(p => !(historial[p.id] || []).length);
+    } else if (mainTab === "contactados") {
+      list = list.filter(p => (historial[p.id] || []).length > 0);
+      if (filtroResp === "positivo")       list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
+      else if (filtroResp === "volver")    list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
+      else if (filtroResp === "negativo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
+      else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
+    } else {
+      if (filtroResp === "sin_contactar")  list = list.filter(p => !(historial[p.id] || []).length);
+      else if (filtroResp === "positivo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
+      else if (filtroResp === "volver")    list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
+      else if (filtroResp === "negativo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
+      else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
+    }
     return list;
-  }, [pas, vista, busqueda, filtroResp, historial, derivadores]);
+  }, [pas, vista, busqueda, filtroResp, historial, derivadores, mainTab]);
 
   const paginated  = useMemo(() => filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE), [filtered, page]);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
@@ -1099,10 +1109,13 @@ export default function App() {
   const subColor = darkMode ? "#475569" : "#94a3b8";
   const iStyle = darkMode ? IS : IS_LIGHT;
 
+  const contactadosCount = pas.filter(p => (historial[p.id] || []).length > 0).length;
+
   const TABS = [
-    { k: "dashboard", l: `📊 Dashboard${recUrgentes > 0 ? ` (${recUrgentes})` : ""}` },
-    { k: "contactos", l: "📋 Contactos" },
-    { k: "clientes",  l: `🤝 Clientes${nDerivadores > 0 ? ` (${nDerivadores})` : ""}` },
+    { k: "dashboard",   l: `📊 Dashboard${recUrgentes > 0 ? ` (${recUrgentes})` : ""}` },
+    { k: "contactos",   l: "📋 Sin contactar" },
+    { k: "contactados", l: `✅ Contactados${contactadosCount > 0 ? ` (${contactadosCount})` : ""}` },
+    { k: "clientes",    l: `🤝 Clientes${nDerivadores > 0 ? ` (${nDerivadores})` : ""}` },
   ];
 
   return (
@@ -1139,7 +1152,7 @@ export default function App() {
 
           <div style={{ display: "flex", gap: 4, marginBottom: pas.length > 0 ? 12 : 0 }}>
             {TABS.map(t => (
-              <button key={t.k} onClick={() => setMainTab(t.k)} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid", borderColor: mainTab === t.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: mainTab === t.k ? "#6366f133" : darkMode ? "#0a0f1e" : "#f8fafc", color: mainTab === t.k ? "#818cf8" : subColor, fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>{t.l}</button>
+              <button key={t.k} onClick={() => { setMainTab(t.k); if (t.k === "contactos") { setFiltroResp("sin_contactar"); setPage(0); } if (t.k === "contactados") { setFiltroResp("todos"); setPage(0); setBusqueda(""); } }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid", borderColor: mainTab === t.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: mainTab === t.k ? "#6366f133" : darkMode ? "#0a0f1e" : "#f8fafc", color: mainTab === t.k ? "#818cf8" : subColor, fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>{t.l}</button>
             ))}
           </div>
 
@@ -1163,8 +1176,15 @@ export default function App() {
               </div>
               <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPage(0); }} placeholder="🔍  Buscar por nombre, mail o teléfono..."
                 style={{ ...iStyle, marginBottom: 8 }} />
+            </>
+          )}
+
+          {pas.length > 0 && mainTab === "contactados" && (
+            <>
+              <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPage(0); }} placeholder="🔍  Buscar contactado..."
+                style={{ ...iStyle, marginBottom: 8 }} />
               <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 2 }}>
-                {[{ k: "todos", l: "Todos" }, { k: "sin_contactar", l: "Sin contactar" }, { k: "positivo", l: "🟢 Positivos" }, { k: "volver", l: "🔁 Volver" }, { k: "negativo", l: "🔴 Negativos" }, { k: "derivadores", l: `☑️ Derivadores` }].map(f => (
+                {[{ k: "todos", l: "Todos" }, { k: "positivo", l: "🟢 Positivos" }, { k: "volver", l: "🔁 Volver a contactar" }, { k: "negativo", l: "🔴 Negativos" }, { k: "derivadores", l: "☑️ Derivadores" }].map(f => (
                   <button key={f.k} onClick={() => { setFiltroResp(f.k); setPage(0); }} style={{ padding: "5px 11px", borderRadius: 20, border: "1px solid", borderColor: filtroResp === f.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: filtroResp === f.k ? "#6366f122" : darkMode ? "#0a0f1e" : "#f8fafc", color: filtroResp === f.k ? "#818cf8" : subColor, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{f.l}</button>
                 ))}
               </div>
@@ -1194,6 +1214,33 @@ export default function App() {
               <span>{filtered.length.toLocaleString("es-AR")} resultados</span>
               {totalPages > 1 && <span>Pág {page + 1} / {totalPages}</span>}
             </div>
+            {paginated.map(p => (
+              <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
+                onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
+                expanded={expandedId === p.id} onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                darkMode={darkMode} />
+            ))}
+            {totalPages > 1 && (
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 20 }}>
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page === 0 ? "#1e293b" : "#94a3b8", cursor: page === 0 ? "default" : "pointer" }}>← Anterior</button>
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page >= totalPages - 1 ? "#1e293b" : "#94a3b8", cursor: page >= totalPages - 1 ? "default" : "pointer" }}>Siguiente →</button>
+              </div>
+            )}
+          </>
+        )}
+
+        {!loading && pas.length > 0 && mainTab === "contactados" && (
+          <>
+            <div style={{ fontSize: 12, color: subColor, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+              <span>{filtered.length.toLocaleString("es-AR")} contactados</span>
+              {totalPages > 1 && <span>Pág {page + 1} / {totalPages}</span>}
+            </div>
+            {filtered.length === 0 && (
+              <div style={{ textAlign: "center", padding: 48, color: subColor }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
+                <div style={{ fontSize: 14 }}>No hay contactados con ese filtro</div>
+              </div>
+            )}
             {paginated.map(p => (
               <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
                 onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
