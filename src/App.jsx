@@ -1097,6 +1097,11 @@ export default function App() {
     setDerivadores(updated); await saveStorage("pas_derivadores", updated);
   }, [derivadores]);
 
+  const handleToggleDescartado = useCallback(async (pasId) => {
+    const updated = { ...descartados, [pasId]: !descartados[pasId] };
+    setDescartados(updated); await saveStorage("pas_descartados", updated);
+  }, [descartados]);
+
   const handleBackup = useCallback(() => {
     const backup = {
       version: 1,
