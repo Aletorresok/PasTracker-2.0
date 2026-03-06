@@ -99,6 +99,13 @@ async function loadStorage(key) {
       data.forEach(row => { result[row.pas_id] = row.fecha_recordatorio })
       return result
     }
+    if (key === 'pas_descartados') {
+      const { data } = await supabase.from('pas_descartados').select('*')
+      if (!data) return null
+      const result = {}
+      data.forEach(row => { result[row.pas_id] = row.activo })
+      return result
+    }
     if (key === 'pas_lista') {
       let allData = [];
       let from = 0;
@@ -154,6 +161,11 @@ async function saveStorage(key, val) {
       await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id, fecha]) => ({ pas_id: Number(pas_id), fecha_recordatorio: fecha }))
       if (rows.length) await supabase.from('pas_recordatorios').insert(rows)
+    }
+    if (key === 'pas_descartados') {
+      await supabase.from('pas_descartados').delete().neq('pas_id', -1)
+      const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
+      if (rows.length) await supabase.from('pas_descartados').insert(rows)
     }
     if (key === 'pas_lista') {
       await supabase.from('pas_lista').delete().neq('pas_id', -1)
@@ -485,10 +497,11 @@ function CasoCard({ caso, onEdit, onDelete, darkMode }) {
 }
 
 // ── PAS CARD ──────────────────────────────────────────────────────────────────
-function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onToggleDerivador, expanded, onToggle, darkMode }) {
+function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onToggleDerivador, onToggleDescartado, descartados, expanded, onToggle, darkMode }) {
   const contactos = historial[pas.id] || [];
   const ultimo = contactos[contactos.length - 1];
   const esDerivador = derivadores[pas.id] || false;
+  const esDescartado = descartados?.[pas.id] || false;
   const ultimosResultados = ultimo?.resultados || (ultimo?.resultado ? [ultimo.resultado] : []);
   const hoyStr = new Date().toISOString().slice(0, 10);
   const rec = recordatorios?.[pas.id];
@@ -539,6 +552,18 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
               <div style={{ fontSize: 11, color: "#475569", marginTop: 1 }}>Aparece en la pestaña Clientes</div>
             </div>
           </div>
+
+          {onToggleDescartado && (
+            <div onClick={() => onToggleDescartado(pas.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: esDescartado ? "#ef444418" : darkMode ? "#1e293b" : "#f8fafc", border: `1px solid ${esDescartado ? "#ef444444" : darkMode ? "#2d3f55" : "#e2e8f0"}`, borderRadius: 10, padding: "10px 14px", marginBottom: 13, cursor: "pointer", transition: "all .2s" }}>
+              <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${esDescartado ? "#ef4444" : "#475569"}`, background: esDescartado ? "#ef4444" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {esDescartado && <span style={{ color: "white", fontSize: 12, fontWeight: 900 }}>✕</span>}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: esDescartado ? "#ef4444" : "#94a3b8" }}>Descartar — me dijo que no</div>
+                <div style={{ fontSize: 11, color: "#475569", marginTop: 1 }}>{esDescartado ? "Oculto en todas las pestañas · tocá para recuperar" : "Lo ocultás de la app hasta que lo recuperes"}</div>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 13 }}>
             {pas.mail && <div><span style={LS}>Mail</span><div style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#475569", wordBreak: "break-all" }}>{pas.mail}</div></div>}
@@ -779,6 +804,12 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const nDerivadores       = Object.values(derivadores).filter(Boolean).length;
   const contactados        = pas.filter(p => (historial[p.id] || []).length > 0).length;
   const positivos          = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo"))).length;
+  const negativos          = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo"))).length;
+  const neutros            = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_neutro"))).length;
+  const noRespondieron     = pas.filter(p => (historial[p.id] || []).length > 0 && (historial[p.id] || []).every(c => (c.resultados || [c.resultado]).includes("no_respondio") || (c.resultados || [c.resultado]).includes("numero_incorrecto"))).length;
+  const volverContactar    = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar"))).length;
+  const tasaRespuesta      = contactados > 0 ? Math.round(((positivos + negativos + neutros) / contactados) * 100) : 0;
+  const tasaPositiva       = contactados > 0 ? Math.round((positivos / contactados) * 100) : 0;
 
   const hoyStr = new Date().toISOString().slice(0, 10);
   const hoy = new Date();
@@ -855,11 +886,51 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         <StatCard label="Comisiones PAS" value={fmtMoney(totalComisionesPAS)} color="#eab308" dark={darkMode} />
         <StatCard label="Casos cobrados" value={cobrados} color="#22c55e" sub={`${enGestion} en gestión`} dark={darkMode} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         <StatCard label="Contactados" value={contactados} color="#6366f1" sub={`de ${pas.length}`} dark={darkMode} />
         <StatCard label="Positivos" value={positivos} color="#22c55e" dark={darkMode} />
         <StatCard label="Derivadores" value={nDerivadores} color="#eab308" dark={darkMode} />
       </div>
+
+      {/* ── Tasa de respuesta ── */}
+      {contactados > 0 && (
+        <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Tasa de respuesta</div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
+            <div>
+              <div style={{ fontSize: 32, fontWeight: 800, color: tasaRespuesta >= 50 ? "#22c55e" : tasaRespuesta >= 25 ? "#eab308" : "#ef4444", lineHeight: 1 }}>{tasaRespuesta}%</div>
+              <div style={{ fontSize: 11, color: subColor, marginTop: 4 }}>respondieron ({positivos + negativos + neutros} de {contactados})</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#22c55e", lineHeight: 1 }}>{tasaPositiva}%</div>
+              <div style={{ fontSize: 11, color: subColor, marginTop: 4 }}>tasa positiva</div>
+            </div>
+          </div>
+          {/* Barra de distribución */}
+          <div style={{ height: 8, borderRadius: 6, overflow: "hidden", display: "flex", marginBottom: 10 }}>
+            {positivos > 0  && <div style={{ flex: positivos,  background: "#22c55e" }} title={`Positivos: ${positivos}`} />}
+            {neutros > 0    && <div style={{ flex: neutros,    background: "#eab308" }} title={`Neutros: ${neutros}`} />}
+            {negativos > 0  && <div style={{ flex: negativos,  background: "#ef4444" }} title={`Negativos: ${negativos}`} />}
+            {volverContactar > 0 && <div style={{ flex: volverContactar, background: "#6366f1" }} title={`Volver: ${volverContactar}`} />}
+            {noRespondieron > 0  && <div style={{ flex: noRespondieron,  background: darkMode ? "#1e293b" : "#e2e8f0" }} title={`Sin respuesta: ${noRespondieron}`} />}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {[
+              { l: "Positivos",    v: positivos,     c: "#22c55e" },
+              { l: "Neutros",      v: neutros,       c: "#eab308" },
+              { l: "Negativos",    v: negativos,     c: "#ef4444" },
+              { l: "Volver",       v: volverContactar, c: "#6366f1" },
+              { l: "Sin respuesta",v: noRespondieron,  c: darkMode ? "#334155" : "#94a3b8" },
+            ].map(s => s.v > 0 && (
+              <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: s.c, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: subColor }}>{s.l}: <strong style={{ color: darkMode ? "#cbd5e1" : "#334155" }}>{s.v}</strong></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Facturación ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Facturación</div>
@@ -976,6 +1047,7 @@ export default function App() {
   const [expandedId, setExpandedId] = useState(null);
   const [page, setPage]             = useState(0);
   const [darkMode, setDarkMode]     = useState(true);
+  const [descartados, setDescartados] = useState({});
   const PER_PAGE = 40;
 
   useEffect(() => {
@@ -984,6 +1056,7 @@ export default function App() {
     loadStorage("pas_casos").then(c => c && setCasos(c));
     loadStorage("pas_derivadores").then(d => d && setDerivadores(d));
     loadStorage("pas_recordatorios").then(r => r && setRecordatorios(r));
+    loadStorage("pas_descartados").then(d => d && setDescartados(d));
   }, []);
 
   const handleFile = useCallback(e => {
@@ -1032,6 +1105,7 @@ export default function App() {
       casos,
       derivadores,
       recordatorios,
+      descartados,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1053,6 +1127,7 @@ export default function App() {
       if (backup.casos)        { setCasos(backup.casos);               await saveStorage("pas_casos", backup.casos); }
       if (backup.derivadores)  { setDerivadores(backup.derivadores);   await saveStorage("pas_derivadores", backup.derivadores); }
       if (backup.recordatorios){ setRecordatorios(backup.recordatorios); await saveStorage("pas_recordatorios", backup.recordatorios); }
+      if (backup.descartados)   { setDescartados(backup.descartados);     await saveStorage("pas_descartados", backup.descartados); }
       alert("✅ Backup restaurado correctamente");
     } catch {
       alert("❌ El archivo no es un backup válido de PAS Tracker");
@@ -1060,8 +1135,12 @@ export default function App() {
     e.target.value = "";
   }, []);
 
+  const [mostrarDescartados, setMostrarDescartados] = useState(false);
+
   const filtered = useMemo(() => {
     let list = pas.filter(p => p.prioridad === vista || vista === "todos");
+    // hide descartados unless explicitly showing them
+    if (!mostrarDescartados) list = list.filter(p => !descartados[p.id]);
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
     if (mainTab === "contactos") {
       list = list.filter(p => !(historial[p.id] || []).length);
@@ -1079,7 +1158,7 @@ export default function App() {
       else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
     }
     return list;
-  }, [pas, vista, busqueda, filtroResp, historial, derivadores, mainTab]);
+  }, [pas, vista, busqueda, filtroResp, historial, derivadores, mainTab, descartados, mostrarDescartados]);
 
   const paginated  = useMemo(() => filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE), [filtered, page]);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
@@ -1217,6 +1296,7 @@ export default function App() {
             {paginated.map(p => (
               <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
                 onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
+                onToggleDescartado={handleToggleDescartado} descartados={descartados}
                 expanded={expandedId === p.id} onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 darkMode={darkMode} />
             ))}
@@ -1244,6 +1324,7 @@ export default function App() {
             {paginated.map(p => (
               <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
                 onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
+                onToggleDescartado={handleToggleDescartado} descartados={descartados}
                 expanded={expandedId === p.id} onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 darkMode={darkMode} />
             ))}
@@ -1252,6 +1333,12 @@ export default function App() {
                 <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page === 0 ? "#1e293b" : "#94a3b8", cursor: page === 0 ? "default" : "pointer" }}>← Anterior</button>
                 <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page >= totalPages - 1 ? "#1e293b" : "#94a3b8", cursor: page >= totalPages - 1 ? "default" : "pointer" }}>Siguiente →</button>
               </div>
+            )}
+            {/* Mostrar/ocultar descartados */}
+            {Object.values(descartados).filter(Boolean).length > 0 && (
+              <button onClick={() => setMostrarDescartados(m => !m)} style={{ width: "100%", marginTop: 16, background: "transparent", border: `1px dashed ${darkMode ? "#334155" : "#cbd5e1"}`, borderRadius: 10, color: darkMode ? "#475569" : "#94a3b8", padding: "10px", cursor: "pointer", fontSize: 13 }}>
+                {mostrarDescartados ? "🙈 Ocultar descartados" : `👁 Ver descartados (${Object.values(descartados).filter(Boolean).length})`}
+              </button>
             )}
           </>
         )}
