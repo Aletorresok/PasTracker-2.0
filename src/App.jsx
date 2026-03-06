@@ -1138,7 +1138,8 @@ export default function App() {
   const [mostrarDescartados, setMostrarDescartados] = useState(false);
 
   const filtered = useMemo(() => {
-    let list = pas.filter(p => p.prioridad === vista || vista === "todos");
+    // en contactados no aplicar filtro de vista (agendado/multi/sin_tel)
+    let list = mainTab === "contactados" ? [...pas] : pas.filter(p => p.prioridad === vista || vista === "todos");
     // hide descartados unless explicitly showing them
     if (!mostrarDescartados) list = list.filter(p => !descartados[p.id]);
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
