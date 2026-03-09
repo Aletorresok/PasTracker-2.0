@@ -52,7 +52,7 @@ function waLink(phone, nombre) {
   const msg = `Hola ${n}, cómo estás? Soy Alexis, abogado.\nTrabajo con productores de seguros cuando el asegurado quiere reclamarle a la compañía del tercero.\nTe hago una consulta rápida: cuando un cliente tuyo tiene un choque y quiere reclamar, ¿cómo lo manejás hoy?`;
   return `https://wa.me/${intl}?text=${encodeURIComponent(msg)}`;
 }
-function fmtDate(iso) { if (!iso) return "—"; return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
+function fmtDate(iso) { if (!iso) return "—"; const [y,m,d] = iso.slice(0,10).split("-"); return `${d}/${m}/${String(y).slice(-2)}`; }
 function fmtMoney(n) { if (n === null || n === undefined || n === "") return "—"; return "$" + Number(n).toLocaleString("es-AR"); }
 function diasDesde(iso) { if (!iso) return null; return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
 
@@ -455,96 +455,95 @@ function CasoCard({ caso, onEdit, onDelete, darkMode }) {
   const recordatorioVencido = caso.recordatorio && caso.recordatorio < hoyStr;
   const logOrdenado = [...(caso.notas_log || [])].sort((a, b) => b.ts - a.ts);
   const ultimaAccion = logOrdenado[0] || null;
+  const bg    = darkMode ? "#1a2535" : "#ffffff";
+  const bg2   = darkMode ? "#222f42" : "#f1f5f9";
+  const bor   = darkMode ? "#2d3f55" : "#e2e8f0";
+  const txt   = darkMode ? "#f1f5f9" : "#0f172a";
+  const sub   = darkMode ? "#94a3b8" : "#475569";
+  const mut   = darkMode ? "#64748b" : "#94a3b8";
+
+  const borderColor = open ? ei.color + "88" : recordatorioVencido ? "#ef444488" : tieneRecordatorio ? "#f9741688" : bor;
 
   return (
-    <div style={{ background: darkMode ? "#0a0f1e" : "#f8fafc", border: `1px solid ${open ? ei.color + "88" : recordatorioVencido ? "#ef444488" : tieneRecordatorio ? "#f9741688" : darkMode ? "#1a2540" : "#e2e8f0"}`, borderRadius: 10, marginBottom: 8, overflow: "hidden", transition: "border-color .2s" }}>
-      <div onClick={() => setOpen(o => !o)} style={{ padding: "12px 14px", cursor: "pointer" }}>
+    <div style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 14, marginBottom: 12, overflow: "hidden", transition: "all .2s", boxShadow: darkMode ? "none" : "0 1px 4px #0000000a" }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: "16px 18px", cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#1e293b", marginBottom: 8 }}>{caso.asegurado}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: txt, marginBottom: 10, lineHeight: 1.3 }}>{caso.asegurado}</div>
             <PipelineBar estado={caso.estado} />
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {caso.fecha_derivacion && <Badge color="#475569" small>📅 {fmtDate(caso.fecha_derivacion)}</Badge>}
-              {diasUlt !== null && <Badge color={diasUlt > 30 ? "#ef4444" : "#64748b"} small>⏱ {diasUlt}d sin mover</Badge>}
-              {caso.monto_ofrecimiento && <Badge color="#f97316">Ofrecim.: {fmtMoney(caso.monto_ofrecimiento)}</Badge>}
-              {tieneRecordatorio && <Badge color="#f97316">⏰ {fmtDate(caso.recordatorio)}</Badge>}
-              {recordatorioVencido && <Badge color="#ef4444">⚠️ Recordatorio vencido</Badge>}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              {caso.fecha_derivacion && <span style={{ fontSize: 11, background: bg2, color: sub, borderRadius: 6, padding: "3px 8px", border: `1px solid ${bor}` }}>📅 {fmtDate(caso.fecha_derivacion)}</span>}
+              {diasUlt !== null && <span style={{ fontSize: 11, background: diasUlt > 30 ? "#ef444418" : bg2, color: diasUlt > 30 ? "#ef4444" : sub, borderRadius: 6, padding: "3px 8px", border: `1px solid ${diasUlt > 30 ? "#ef444433" : bor}`, fontWeight: diasUlt > 30 ? 700 : 400 }}>⏱ {diasUlt}d sin mover</span>}
+              {caso.monto_ofrecimiento && <span style={{ fontSize: 11, background: "#f9731618", color: "#f97316", borderRadius: 6, padding: "3px 8px", border: "1px solid #f9731633", fontWeight: 600 }}>💬 {fmtMoney(caso.monto_ofrecimiento)}</span>}
+              {tieneRecordatorio && <span style={{ fontSize: 11, background: "#f9731618", color: "#f97316", borderRadius: 6, padding: "3px 8px", border: "1px solid #f9731633", fontWeight: 600 }}>⏰ {fmtDate(caso.recordatorio)}</span>}
+              {recordatorioVencido && <span style={{ fontSize: 11, background: "#ef444418", color: "#ef4444", borderRadius: 6, padding: "3px 8px", border: "1px solid #ef444433", fontWeight: 700 }}>⚠️ Recordatorio vencido</span>}
+              {caso.estado === "cobrado" && caso.monto_cobro_asegurado && <span style={{ fontSize: 11, background: "#22c55e18", color: "#22c55e", borderRadius: 6, padding: "3px 8px", border: "1px solid #22c55e33", fontWeight: 600 }}>✅ {fmtMoney(caso.monto_cobro_asegurado)}</span>}
             </div>
             {ultimaAccion && (
-              <div style={{ marginTop: 7, display: "flex", alignItems: "flex-start", gap: 7, background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 7, padding: "6px 9px" }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#6366f1", marginTop: 4, flexShrink: 0 }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 1 }}>{fmtDate(ultimaAccion.fecha)} · última acción {logOrdenado.length > 1 ? `(${logOrdenado.length} total)` : ""}</div>
-                  <div style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ultimaAccion.texto}</div>
+              <div style={{ marginTop: 10, display: "flex", alignItems: "flex-start", gap: 8, background: bg2, borderRadius: 8, padding: "8px 11px", border: `1px solid ${bor}` }}>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#6366f1", marginTop: 4, flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#6366f1", fontWeight: 600, marginBottom: 2 }}>{fmtDate(ultimaAccion.fecha)} · última acción {logOrdenado.length > 1 ? `(${logOrdenado.length})` : ""}</div>
+                  <div style={{ fontSize: 12, color: sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ultimaAccion.texto}</div>
                 </div>
-                {logOrdenado.length > 1 && <div style={{ fontSize: 10, color: "#6366f1", flexShrink: 0, marginTop: 2 }}>ver todo ↓</div>}
-              </div>
-            )}
-
-            {caso.estado === "cobrado" && (caso.monto_cobro_yo || caso.monto_cobro_asegurado) && (
-              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                {caso.monto_cobro_asegurado && <Badge color="#22c55e">Aseg: {fmtMoney(caso.monto_cobro_asegurado)}</Badge>}
-                {caso.monto_cobro_yo        && <Badge color="#6366f1">Yo: {fmtMoney(caso.monto_cobro_yo)}</Badge>}
-                {caso.monto_comision_pas    && <Badge color="#eab308">PAS: {fmtMoney(caso.monto_comision_pas)}</Badge>}
               </div>
             )}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-            <button onClick={e => { e.stopPropagation(); onEdit(caso); }} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: `1px solid ${darkMode ? "#2d3f55" : "#cbd5e1"}`, borderRadius: 6, color: "#94a3b8", padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✏️</button>
-            <button onClick={e => { e.stopPropagation(); onDelete(caso.id); }} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: `1px solid ${darkMode ? "#2d3f55" : "#cbd5e1"}`, borderRadius: 6, color: "#64748b", padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>🗑</button>
+            <button onClick={e => { e.stopPropagation(); onEdit(caso); }} style={{ background: bg2, border: `1px solid ${bor}`, borderRadius: 6, color: sub, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}>✏️</button>
+            <button onClick={e => { e.stopPropagation(); onDelete(caso.id); }} style={{ background: bg2, border: `1px solid ${bor}`, borderRadius: 6, color: sub, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}>🗑</button>
           </div>
         </div>
       </div>
       {open && (
-        <div style={{ borderTop: `1px solid ${darkMode ? "#1a2540" : "#e2e8f0"}`, padding: "12px 14px" }}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ ...LS, marginBottom: 8 }}>Fechas</div>
+        <div style={{ borderTop: `1px solid ${bor}`, padding: "16px 18px", background: darkMode ? bg2 : "#fafbfc" }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: mut, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 700, marginBottom: 8 }}>Fechas</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[{ k: "fecha_derivacion", l: "Derivación" }, { k: "fecha_contacto_asegurado", l: "Contacto asegurado" }, { k: "fecha_inicio_reclamo", l: "Inicio reclamo" }, { k: "fecha_ultimo_movimiento", l: "Último movimiento" }]
-                .filter(f => caso[f.k])
-                .map(f => (
-                  <div key={f.k} style={{ background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>{f.l}</div>
-                    <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155", fontWeight: 600 }}>{fmtDate(caso[f.k])}</div>
+                .filter(f => caso[f.k]).map(f => (
+                  <div key={f.k} style={{ background: bg, borderRadius: 8, padding: "10px 12px", border: `1px solid ${bor}` }}>
+                    <div style={{ fontSize: 10, color: mut, marginBottom: 3 }}>{f.l}</div>
+                    <div style={{ fontSize: 14, color: txt, fontWeight: 700 }}>{fmtDate(caso[f.k])}</div>
                   </div>
                 ))}
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ ...LS, marginBottom: 8 }}>Montos</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: mut, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 700, marginBottom: 8 }}>Montos</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
               {[
-                { k: "monto_ofrecimiento",     l: "Ofrecimiento",   c: "#f97316" },
-                { k: "monto_cobro_asegurado",  l: "Cobró asegurado",c: "#22c55e" },
-                { k: "monto_cobro_yo",         l: "Cobré yo",       c: "#6366f1" },
-                { k: "monto_comision_pas",     l: "Comisión PAS",   c: "#eab308" },
+                { k: "monto_ofrecimiento",    l: "Ofrecimiento",    c: "#f97316" },
+                { k: "monto_cobro_asegurado", l: "Cobró asegurado", c: "#22c55e" },
+                { k: "monto_cobro_yo",        l: "Cobré yo",        c: "#6366f1" },
+                { k: "monto_comision_pas",    l: "Comisión PAS",    c: "#eab308" },
               ].map(f => (
-                <div key={f.k} style={{ background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 8, padding: "8px 10px", border: `1px solid ${f.c}22` }}>
-                  <div style={{ fontSize: 9, color: f.c + "99", marginBottom: 2 }}>{f.l}</div>
-                  <div style={{ fontSize: 13, color: caso[f.k] ? f.c : "#334155", fontWeight: 700 }}>{fmtMoney(caso[f.k] || null)}</div>
+                <div key={f.k} style={{ background: bg, borderRadius: 8, padding: "10px 12px", border: `1px solid ${f.c}33` }}>
+                  <div style={{ fontSize: 10, color: f.c + "aa", marginBottom: 3 }}>{f.l}</div>
+                  <div style={{ fontSize: 15, color: caso[f.k] ? f.c : mut, fontWeight: 800 }}>{fmtMoney(caso[f.k] || null)}</div>
                 </div>
               ))}
             </div>
           </div>
           {caso.nota && (
-            <div style={{ background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>NOTA DEL CASO</div>
-              <div style={{ fontSize: 13, color: darkMode ? "#94a3b8" : "#334155", fontStyle: "italic" }}>{caso.nota}</div>
+            <div style={{ background: bg, borderRadius: 8, padding: "10px 12px", marginBottom: 14, border: `1px solid ${bor}` }}>
+              <div style={{ fontSize: 10, color: mut, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Nota del caso</div>
+              <div style={{ fontSize: 13, color: sub, fontStyle: "italic", lineHeight: 1.5 }}>{caso.nota}</div>
             </div>
           )}
           {logOrdenado.length > 0 && (
             <div>
-              <div style={{ ...LS, marginBottom: 10 }}>Historial de acciones</div>
-              <div style={{ paddingLeft: 4 }}>
+              <div style={{ fontSize: 10, color: mut, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 700, marginBottom: 12 }}>Historial de acciones</div>
+              <div style={{ paddingLeft: 6 }}>
                 {logOrdenado.map((n, i) => (
-                  <div key={n.ts} style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                  <div key={n.ts} style={{ display: "flex", gap: 12, marginBottom: 10 }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: i === 0 ? "#6366f1" : darkMode ? "#334155" : "#cbd5e1", marginTop: 4, flexShrink: 0 }} />
-                      {i < logOrdenado.length - 1 && <div style={{ width: 1, flex: 1, background: darkMode ? "#1e293b" : "#e2e8f0", marginTop: 3, minHeight: 16 }} />}
+                      <div style={{ width: 9, height: 9, borderRadius: "50%", background: i === 0 ? "#6366f1" : bor, marginTop: 3, flexShrink: 0, border: i === 0 ? "2px solid #6366f144" : "none" }} />
+                      {i < logOrdenado.length - 1 && <div style={{ width: 1, flex: 1, background: bor, marginTop: 4, minHeight: 18 }} />}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, paddingBottom: 4 }}>
-                      <div style={{ fontSize: 10, color: i === 0 ? "#6366f1" : "#64748b", fontWeight: i === 0 ? 700 : 400, marginBottom: 2 }}>{fmtDate(n.fecha)}{i === 0 ? " · más reciente" : ""}</div>
-                      <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155" }}>{n.texto}</div>
+                    <div style={{ flex: 1, paddingBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: i === 0 ? "#6366f1" : mut, fontWeight: i === 0 ? 700 : 500, marginBottom: 3 }}>{fmtDate(n.fecha)}{i === 0 ? " · más reciente" : ""}</div>
+                      <div style={{ fontSize: 13, color: sub, lineHeight: 1.5 }}>{n.texto}</div>
                     </div>
                   </div>
                 ))}
