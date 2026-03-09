@@ -130,19 +130,15 @@ async function loadStorage(key) {
 async function saveStorage(key, val) {
   try {
     if (key === 'pas_historial') {
-      // Upsert por pas_id+ts (clave compuesta)
+      await supabase.from('pas_historial').delete().neq('pas_id', -1)
       const rows = []
       Object.entries(val).forEach(([pas_id, contactos]) => {
         contactos.forEach(c => rows.push({ pas_id: Number(pas_id), fecha: c.fecha, resultados: c.resultados, nota: c.nota, ts: c.ts }))
       })
-      // Borramos sólo los pas_id presentes y reinsertamos — más seguro que borrar todo
-      const pasIds = [...new Set(rows.map(r => r.pas_id))]
-      if (pasIds.length) {
-        await supabase.from('pas_historial').delete().in('pas_id', pasIds)
-        await supabase.from('pas_historial').insert(rows)
-      }
+      if (rows.length) await supabase.from('pas_historial').insert(rows)
     }
     if (key === 'pas_casos') {
+      await supabase.from('pas_casos').delete().neq('pas_id', -1)
       const rows = []
       Object.entries(val).forEach(([pas_id, casosList]) => {
         casosList.forEach(c => rows.push({
@@ -154,27 +150,22 @@ async function saveStorage(key, val) {
           recordatorio: c.recordatorio || null, notas_log: c.notas_log || [],
         }))
       })
-      const pasIds = [...new Set(rows.map(r => r.pas_id))]
-      if (pasIds.length) {
-        await supabase.from('pas_casos').delete().in('pas_id', pasIds)
-        await supabase.from('pas_casos').insert(rows)
-      }
+      if (rows.length) await supabase.from('pas_casos').insert(rows)
     }
     if (key === 'pas_derivadores') {
-      // Upsert: solo mandamos los que cambiaron
-      const rows = Object.entries(val).map(([pas_id, activo]) => ({ pas_id: Number(pas_id), activo: !!activo }))
-      if (rows.length) await supabase.from('pas_derivadores').upsert(rows, { onConflict: 'pas_id' })
+      await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
+      const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
+      if (rows.length) await supabase.from('pas_derivadores').insert(rows)
     }
     if (key === 'pas_recordatorios') {
+      await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id, fecha]) => ({ pas_id: Number(pas_id), fecha_recordatorio: fecha }))
-      if (rows.length) await supabase.from('pas_recordatorios').upsert(rows, { onConflict: 'pas_id' })
-      // Borrar los que quedaron sin recordatorio
-      const sinRec = Object.entries(val).filter(([, v]) => !v).map(([pas_id]) => Number(pas_id))
-      if (sinRec.length) await supabase.from('pas_recordatorios').delete().in('pas_id', sinRec)
+      if (rows.length) await supabase.from('pas_recordatorios').insert(rows)
     }
     if (key === 'pas_descartados') {
-      const rows = Object.entries(val).map(([pas_id, activo]) => ({ pas_id: Number(pas_id), activo: !!activo }))
-      if (rows.length) await supabase.from('pas_descartados').upsert(rows, { onConflict: 'pas_id' })
+      await supabase.from('pas_descartados').delete().neq('pas_id', -1)
+      const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
+      if (rows.length) await supabase.from('pas_descartados').insert(rows)
     }
     if (key === 'pas_lista') {
       await supabase.from('pas_lista').delete().neq('pas_id', -1)
@@ -285,6 +276,10 @@ function CasoModal({ pasNombre, casoEdit, onClose, onSave, darkMode }) {
   const blank = { asegurado: "", estado: "iniciado", nota: "", fecha_derivacion: "", fecha_contacto_asegurado: "", fecha_inicio_reclamo: "", fecha_ultimo_movimiento: new Date().toISOString().slice(0, 10), monto_ofrecimiento: "", monto_cobro_asegurado: "", monto_cobro_yo: "", monto_comision_pas: "", recordatorio: "", notas_log: [] };
   const [d, setD] = useState(casoEdit ? { ...blank, ...casoEdit } : blank);
   const [nuevaNota, setNuevaNota] = useState("");
+  const [nuevaFecha, setNuevaFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [editandoIdx, setEditandoIdx] = useState(null);
+  const [editTexto, setEditTexto] = useState("");
+  const [editFecha, setEditFecha] = useState("");
   const set = k => e => setD(p => ({ ...p, [k]: e.target.value }));
   const ei = estadoInfo(d.estado);
   const ok = d.asegurado.trim().length > 0;
@@ -294,9 +289,16 @@ function CasoModal({ pasNombre, casoEdit, onClose, onSave, darkMode }) {
 
   const agregarNota = () => {
     if (!nuevaNota.trim()) return;
-    const entry = { texto: nuevaNota.trim(), fecha: new Date().toISOString().slice(0, 10), ts: Date.now() };
+    const entry = { texto: nuevaNota.trim(), fecha: nuevaFecha, ts: Date.now() };
     setD(p => ({ ...p, notas_log: [...(p.notas_log || []), entry] }));
     setNuevaNota("");
+    setNuevaFecha(new Date().toISOString().slice(0, 10));
+  };
+  const borrarNota = (ts) => setD(p => ({ ...p, notas_log: (p.notas_log || []).filter(n => n.ts !== ts) }));
+  const iniciarEdicion = (n) => { setEditandoIdx(n.ts); setEditTexto(n.texto); setEditFecha(n.fecha); };
+  const guardarEdicion = (ts) => {
+    setD(p => ({ ...p, notas_log: (p.notas_log || []).map(n => n.ts === ts ? { ...n, texto: editTexto, fecha: editFecha } : n) }));
+    setEditandoIdx(null);
   };
 
   return (
@@ -375,22 +377,50 @@ function CasoModal({ pasNombre, casoEdit, onClose, onSave, darkMode }) {
           <textarea value={d.nota} onChange={set("nota")} rows={2} placeholder="Compañía, número de siniestro, observaciones..." style={{ ...iStyle, resize: "vertical" }} />
         </label>
 
-        {/* HISTORIAL DE NOTAS */}
+        {/* HISTORIAL DE ACCIONES */}
         <div style={{ marginBottom: 20 }}>
-          <span style={lStyle}>Historial de notas</span>
+          <span style={lStyle}>Historial de acciones</span>
           {(d.notas_log || []).length > 0 && (
-            <div style={{ marginBottom: 10, maxHeight: 140, overflowY: "auto" }}>
-              {[...(d.notas_log || [])].reverse().map((n, i) => (
-                <div key={i} style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
-                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3 }}>{fmtDate(n.fecha)}</div>
-                  <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155" }}>{n.texto}</div>
+            <div style={{ marginBottom: 12, maxHeight: 220, overflowY: "auto", paddingLeft: 4 }}>
+              {[...(d.notas_log || [])].sort((a,b) => b.ts - a.ts).map((n) => (
+                <div key={n.ts} style={{ display: "flex", gap: 10, marginBottom: 10, position: "relative" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6366f1", marginTop: 4, flexShrink: 0 }} />
+                    <div style={{ width: 1, flex: 1, background: darkMode ? "#1e293b" : "#e2e8f0", marginTop: 3 }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0, paddingBottom: 6 }}>
+                    {editandoIdx === n.ts ? (
+                      <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid #6366f188`, borderRadius: 8, padding: "8px 10px" }}>
+                        <input type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} style={{ ...iStyle, fontSize: 11, padding: "4px 8px", marginBottom: 6 }} />
+                        <textarea value={editTexto} onChange={e => setEditTexto(e.target.value)} rows={2} style={{ ...iStyle, resize: "vertical", marginBottom: 6 }} />
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => guardarEdicion(n.ts)} style={{ flex: 1, background: "#6366f1", border: "none", borderRadius: 6, color: "white", padding: "5px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Guardar</button>
+                          <button onClick={() => setEditandoIdx(null)} style={{ flex: 1, background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 6, color: "#94a3b8", padding: "5px", cursor: "pointer", fontSize: 12 }}>Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 8, padding: "8px 10px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{fmtDate(n.fecha)}</div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button onClick={() => iniciarEdicion(n)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#475569", padding: "1px 4px" }}>✏️</button>
+                            <button onClick={() => borrarNota(n.ts)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#475569", padding: "1px 4px" }}>🗑</button>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155" }}>{n.texto}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={nuevaNota} onChange={e => setNuevaNota(e.target.value)} onKeyDown={e => e.key === "Enter" && agregarNota()} placeholder="Agregar nota al historial..." style={{ ...iStyle, flex: 1 }} />
-            <button onClick={agregarNota} style={{ background: "#6366f1", border: "none", borderRadius: 8, color: "white", padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>+ Agregar</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="date" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)} style={{ ...iStyle, width: "auto", flex: "0 0 140px", fontSize: 13 }} />
+              <input value={nuevaNota} onChange={e => setNuevaNota(e.target.value)} onKeyDown={e => e.key === "Enter" && agregarNota()} placeholder="Describir acción..." style={{ ...iStyle, flex: 1 }} />
+            </div>
+            <button onClick={agregarNota} style={{ background: "#6366f1", border: "none", borderRadius: 8, color: "white", padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>+ Agregar acción</button>
           </div>
         </div>
 
@@ -422,6 +452,8 @@ function CasoCard({ caso, onEdit, onDelete, darkMode }) {
   const hoyStr = new Date().toISOString().slice(0, 10);
   const tieneRecordatorio = caso.recordatorio && caso.recordatorio >= hoyStr;
   const recordatorioVencido = caso.recordatorio && caso.recordatorio < hoyStr;
+  const logOrdenado = [...(caso.notas_log || [])].sort((a, b) => b.ts - a.ts);
+  const ultimaAccion = logOrdenado[0] || null;
 
   return (
     <div style={{ background: darkMode ? "#0a0f1e" : "#f8fafc", border: `1px solid ${open ? ei.color + "88" : recordatorioVencido ? "#ef444488" : tieneRecordatorio ? "#f9741688" : darkMode ? "#1a2540" : "#e2e8f0"}`, borderRadius: 10, marginBottom: 8, overflow: "hidden", transition: "border-color .2s" }}>
@@ -437,6 +469,17 @@ function CasoCard({ caso, onEdit, onDelete, darkMode }) {
               {tieneRecordatorio && <Badge color="#f97316">⏰ {fmtDate(caso.recordatorio)}</Badge>}
               {recordatorioVencido && <Badge color="#ef4444">⚠️ Recordatorio vencido</Badge>}
             </div>
+            {ultimaAccion && (
+              <div style={{ marginTop: 7, display: "flex", alignItems: "flex-start", gap: 7, background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 7, padding: "6px 9px" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#6366f1", marginTop: 4, flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 1 }}>{fmtDate(ultimaAccion.fecha)} · última acción {logOrdenado.length > 1 ? `(${logOrdenado.length} total)` : ""}</div>
+                  <div style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ultimaAccion.texto}</div>
+                </div>
+                {logOrdenado.length > 1 && <div style={{ fontSize: 10, color: "#6366f1", flexShrink: 0, marginTop: 2 }}>ver todo ↓</div>}
+              </div>
+            )}
+
             {caso.estado === "cobrado" && (caso.monto_cobro_yo || caso.monto_cobro_asegurado) && (
               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                 {caso.monto_cobro_asegurado && <Badge color="#22c55e">Aseg: {fmtMoney(caso.monto_cobro_asegurado)}</Badge>}
@@ -488,15 +531,23 @@ function CasoCard({ caso, onEdit, onDelete, darkMode }) {
               <div style={{ fontSize: 13, color: darkMode ? "#94a3b8" : "#334155", fontStyle: "italic" }}>{caso.nota}</div>
             </div>
           )}
-          {(caso.notas_log || []).length > 0 && (
+          {logOrdenado.length > 0 && (
             <div>
-              <div style={{ ...LS, marginBottom: 8 }}>Historial de notas</div>
-              {[...(caso.notas_log || [])].reverse().map((n, i) => (
-                <div key={i} style={{ background: darkMode ? "#0f172a" : "#f1f5f9", border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
-                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 2 }}>{fmtDate(n.fecha)}</div>
-                  <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155" }}>{n.texto}</div>
-                </div>
-              ))}
+              <div style={{ ...LS, marginBottom: 10 }}>Historial de acciones</div>
+              <div style={{ paddingLeft: 4 }}>
+                {logOrdenado.map((n, i) => (
+                  <div key={n.ts} style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: i === 0 ? "#6366f1" : darkMode ? "#334155" : "#cbd5e1", marginTop: 4, flexShrink: 0 }} />
+                      {i < logOrdenado.length - 1 && <div style={{ width: 1, flex: 1, background: darkMode ? "#1e293b" : "#e2e8f0", marginTop: 3, minHeight: 16 }} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingBottom: 4 }}>
+                      <div style={{ fontSize: 10, color: i === 0 ? "#6366f1" : "#64748b", fontWeight: i === 0 ? 700 : 400, marginBottom: 2 }}>{fmtDate(n.fecha)}{i === 0 ? " · más reciente" : ""}</div>
+                      <div style={{ fontSize: 13, color: darkMode ? "#cbd5e1" : "#334155" }}>{n.texto}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -543,10 +594,6 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
             const ri = RESULTADOS_CONTACTO.find(r => r.key === k);
             return ri ? <Badge key={k} color={ri.color} small>{fmtDate(ultimo.fecha)}</Badge> : null;
           })}
-          {/* Fix 10: botón registrar contacto rápido en card colapsada */}
-          {!expanded && (
-            <button onClick={e => { e.stopPropagation(); onContactar(pas); }} title="Registrar contacto" style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, flexShrink: 0 }}>+</button>
-          )}
           {pas.prioridad === "agendado" && (
             <a href={waLink(pas.telefonos[0], pas.nombre)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
               style={{ background: "#25d366", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", fontSize: 16 }}>💬</a>
@@ -567,10 +614,7 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
           </div>
 
           {onToggleDescartado && (
-            <div onClick={() => {
-              if (!esDescartado && !window.confirm(`¿Descartar a ${pas.nombre}? Lo vas a ocultar de todas las pestañas. Podés recuperarlo después.`)) return;
-              onToggleDescartado(pas.id);
-            }} style={{ display: "flex", alignItems: "center", gap: 10, background: esDescartado ? "#ef444418" : darkMode ? "#1e293b" : "#f8fafc", border: `1px solid ${esDescartado ? "#ef444444" : darkMode ? "#2d3f55" : "#e2e8f0"}`, borderRadius: 10, padding: "10px 14px", marginBottom: 13, cursor: "pointer", transition: "all .2s" }}>
+            <div onClick={() => onToggleDescartado(pas.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: esDescartado ? "#ef444418" : darkMode ? "#1e293b" : "#f8fafc", border: `1px solid ${esDescartado ? "#ef444444" : darkMode ? "#2d3f55" : "#e2e8f0"}`, borderRadius: 10, padding: "10px 14px", marginBottom: 13, cursor: "pointer", transition: "all .2s" }}>
               <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${esDescartado ? "#ef4444" : "#475569"}`, background: esDescartado ? "#ef4444" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {esDescartado && <span style={{ color: "white", fontSize: 12, fontWeight: 900 }}>✕</span>}
               </div>
@@ -688,12 +732,12 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
   const cobradosCasos      = allCasos.filter(c => c.estado === "cobrado" && c.fecha_derivacion);
   const promCierre         = cobradosCasos.length ? Math.round(cobradosCasos.reduce((s, c) => s + diasDesde(c.fecha_derivacion), 0) / cobradosCasos.length) : null;
 
-  const handleSave = useCallback((pasId, casoData) => {
+  const handleSave = (pasId, casoData) => {
     const cur = casos[pasId] || [];
     const idx = cur.findIndex(c => c.id === casoData.id);
     onSaveCasos(pasId, idx >= 0 ? cur.map(c => c.id === casoData.id ? casoData : c) : [...cur, casoData]);
     setModalPas(null); setCasoEdit(null);
-  }, [casos, onSaveCasos]);
+  };
 
   const exportarExcel = () => {
     const rows = [];
@@ -827,27 +871,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const tasaRespuesta      = contactados > 0 ? Math.round(((positivos + negativos + neutros) / contactados) * 100) : 0;
   const tasaPositiva       = contactados > 0 ? Math.round((positivos / contactados) * 100) : 0;
 
-  // Fix 11: tasa conversión derivador → al menos 1 caso
-  const derivadoresConCaso = Object.entries(derivadores).filter(([pasId, activo]) => activo && (casos[pasId] || []).length > 0).length;
-  const tasaConversion     = nDerivadores > 0 ? Math.round((derivadoresConCaso / nDerivadores) * 100) : null;
-
-  // Fix 12: tiempo promedio entre primer contacto y primer caso derivado
-  const tiemposDerivacion = useMemo(() => {
-    const tiempos = [];
-    Object.entries(casos).forEach(([pasId, casosList]) => {
-      const primerCaso = casosList.find(c => c.fecha_derivacion);
-      const hist = historial[Number(pasId)] || [];
-      if (primerCaso && hist.length > 0) {
-        const primerContacto = hist.reduce((min, c) => (!min || c.fecha < min) ? c.fecha : min, null);
-        if (primerContacto) {
-          const dias = Math.floor((new Date(primerCaso.fecha_derivacion) - new Date(primerContacto)) / 86400000);
-          if (dias >= 0) tiempos.push(dias);
-        }
-      }
-    });
-    return tiempos.length ? Math.round(tiempos.reduce((a, b) => a + b, 0) / tiempos.length) : null;
-  }, [casos, historial]);
-
   const hoyStr = new Date().toISOString().slice(0, 10);
   const hoy = new Date();
 
@@ -900,17 +923,13 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
   const maxCobrado = rankingPAS.length ? Math.max(...rankingPAS.map(p => p.cobrado), 1) : 1;
 
-  // Recordatorios — Fix 13: agrupados por fecha
+  // Recordatorios
   const recsPAS = pas.filter(p => { const r = recordatorios?.[p.id]; return r && r <= hoyStr; });
   const recsCasos = [];
   Object.entries(casos).forEach(([pasId, casosList]) => {
     const pasObj = pas.find(p => p.id === Number(pasId));
     casosList.forEach(c => { if (c.recordatorio && c.recordatorio <= hoyStr) recsCasos.push({ ...c, pasNombre: pasObj?.nombre || "PAS desconocido" }); });
   });
-  const recsHoyPAS    = recsPAS.filter(p => recordatorios[p.id] === hoyStr);
-  const recsVencPAS   = recsPAS.filter(p => recordatorios[p.id] < hoyStr);
-  const recsHoyCasos  = recsCasos.filter(c => c.recordatorio === hoyStr);
-  const recsVencCasos = recsCasos.filter(c => c.recordatorio < hoyStr);
 
   const cardBg = darkMode ? "#0f172a" : "#f8fafc";
   const cardBorder = darkMode ? "#1e293b" : "#e2e8f0";
@@ -932,27 +951,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         <StatCard label="Positivos" value={positivos} color="#22c55e" dark={darkMode} />
         <StatCard label="Derivadores" value={nDerivadores} color="#eab308" dark={darkMode} />
       </div>
-
-      {/* Fix 11/12: Conversión y tiempo promedio */}
-      {nDerivadores > 0 && (
-        <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Conversión PAS → Caso</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: "#22c55e" }}>{tasaConversion !== null ? `${tasaConversion}%` : "—"}</div>
-              <div style={{ fontSize: 11, color: subColor, marginTop: 3 }}>derivadores con caso</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: "#6366f1" }}>{derivadoresConCaso}</div>
-              <div style={{ fontSize: 11, color: subColor, marginTop: 3 }}>de {nDerivadores} enviaron</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: "#f97316" }}>{tiemposDerivacion !== null ? `${tiemposDerivacion}d` : "—"}</div>
-              <div style={{ fontSize: 11, color: subColor, marginTop: 3 }}>días prom. contacto→caso</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Tasa de respuesta ── */}
       {contactados > 0 && (
@@ -1061,62 +1059,26 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
       {/* ── Recordatorios ── */}
       {(recsPAS.length > 0 || recsCasos.length > 0) && (
-        <div style={{ background: "rgba(249,115,22,0.07)", border: "1px solid #f9741644", borderRadius: 12, padding: "14px", marginBottom: 16 }}>
+        <div style={{ background: "#f9741611", border: "1px solid #f9741644", borderRadius: 12, padding: "14px", marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: "#f97316", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12, fontWeight: 700 }}>⏰ Recordatorios pendientes</div>
-
-          {/* Hoy */}
-          {(recsHoyPAS.length > 0 || recsHoyCasos.length > 0) && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: "#f97316", fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ background: "#f9731622", borderRadius: 20, padding: "2px 10px" }}>Hoy ({recsHoyPAS.length + recsHoyCasos.length})</span>
+          {recsPAS.map(p => (
+            <div key={p.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #f9741633", borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{p.nombre}</div>
+                <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Contacto PAS · {fmtDate(recordatorios[p.id])}</div>
               </div>
-              {recsHoyPAS.map(p => (
-                <div key={p.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #f9741633", borderRadius: 8, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{p.nombre}</div>
-                    <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Contacto PAS</div>
-                  </div>
-                  <Badge color="#f97316">Hoy</Badge>
-                </div>
-              ))}
-              {recsHoyCasos.map(c => (
-                <div key={c.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #f9741633", borderRadius: 8, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{c.asegurado}</div>
-                    <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Caso de {c.pasNombre}</div>
-                  </div>
-                  <Badge color="#f97316">Hoy</Badge>
-                </div>
-              ))}
+              <Badge color="#f97316">{recordatorios[p.id] === hoyStr ? "Hoy" : "Vencido"}</Badge>
             </div>
-          )}
-
-          {/* Vencidos */}
-          {(recsVencPAS.length > 0 || recsVencCasos.length > 0) && (
-            <div>
-              <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ background: "#ef444422", borderRadius: 20, padding: "2px 10px" }}>Vencidos ({recsVencPAS.length + recsVencCasos.length})</span>
+          ))}
+          {recsCasos.map(c => (
+            <div key={c.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #f9741633", borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{c.asegurado}</div>
+                <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Caso de {c.pasNombre} · {fmtDate(c.recordatorio)}</div>
               </div>
-              {recsVencPAS.map(p => (
-                <div key={p.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #ef444433", borderRadius: 8, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{p.nombre}</div>
-                    <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Contacto PAS · {fmtDate(recordatorios[p.id])}</div>
-                  </div>
-                  <Badge color="#ef4444">Vencido</Badge>
-                </div>
-              ))}
-              {recsVencCasos.map(c => (
-                <div key={c.id} style={{ background: darkMode ? "#0f172a" : "#fff", border: "1px solid #ef444433", borderRadius: 8, padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>{c.asegurado}</div>
-                    <div style={{ fontSize: 11, color: subColor, marginTop: 2 }}>Caso de {c.pasNombre} · {fmtDate(c.recordatorio)}</div>
-                  </div>
-                  <Badge color="#ef4444">Vencido</Badge>
-                </div>
-              ))}
+              <Badge color="#f97316">{c.recordatorio === hoyStr ? "Hoy" : "Vencido"}</Badge>
             </div>
-          )}
+          ))}
         </div>
       )}
       {recsPAS.length === 0 && recsCasos.length === 0 && (
@@ -1137,44 +1099,24 @@ export default function App() {
   const [derivadores, setDerivadores] = useState({});
   const [recordatorios, setRecordatorios] = useState({});
   const [loading, setLoading]       = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("Cargando...");
   const [mainTab, setMainTab]       = useState("dashboard");
   const [vista, setVista]           = useState("agendado");
   const [busqueda, setBusqueda]     = useState("");
   const [filtroResp, setFiltroResp] = useState("sin_contactar");
   const [modalPas, setModalPas]     = useState(null);
   const [expandedId, setExpandedId] = useState(null);
-  // Fix 3: paginación separada por tab
-  const [pageContactos, setPageContactos]     = useState(0);
-  const [pageContactados, setPageContactados] = useState(0);
+  const [page, setPage]             = useState(0);
   const [darkMode, setDarkMode]     = useState(true);
   const [descartados, setDescartados] = useState({});
-  const [mostrarDescartados, setMostrarDescartados] = useState(false);
-  // Fix 9: filtro recordatorios urgentes en Sin Contactar
-  const [soloConRecordatorio, setSoloConRecordatorio] = useState(false);
   const PER_PAGE = 40;
 
   useEffect(() => {
-    setLoadingMsg("Cargando lista de PAS...");
-    setLoading(true);
-    loadStorage("pas_lista").then(l => {
-      if (l) setPas(l);
-      setLoadingMsg("Cargando historial...");
-      return Promise.all([
-        loadStorage("pas_historial"),
-        loadStorage("pas_casos"),
-        loadStorage("pas_derivadores"),
-        loadStorage("pas_recordatorios"),
-        loadStorage("pas_descartados"),
-      ]);
-    }).then(([h, c, d, r, desc]) => {
-      if (h) setHistorial(h);
-      if (c) setCasos(c);
-      if (d) setDerivadores(d);
-      if (r) setRecordatorios(r);
-      if (desc) setDescartados(desc);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    loadStorage("pas_lista").then(l => l && setPas(l));
+    loadStorage("pas_historial").then(h => h && setHistorial(h));
+    loadStorage("pas_casos").then(c => c && setCasos(c));
+    loadStorage("pas_derivadores").then(d => d && setDerivadores(d));
+    loadStorage("pas_recordatorios").then(r => r && setRecordatorios(r));
+    loadStorage("pas_descartados").then(d => d && setDescartados(d));
   }, []);
 
   const handleFile = useCallback(e => {
@@ -1215,11 +1157,6 @@ export default function App() {
     setDerivadores(updated); await saveStorage("pas_derivadores", updated);
   }, [derivadores]);
 
-  const handleToggleDescartado = useCallback(async (pasId) => {
-    const updated = { ...descartados, [pasId]: !descartados[pasId] };
-    setDescartados(updated); await saveStorage("pas_descartados", updated);
-  }, [descartados]);
-
   const handleBackup = useCallback(() => {
     const backup = {
       version: 1,
@@ -1258,39 +1195,40 @@ export default function App() {
     e.target.value = "";
   }, []);
 
+  const [mostrarDescartados, setMostrarDescartados] = useState(false);
+
   const filtered = useMemo(() => {
+    // en contactados no aplicar filtro de vista (agendado/multi/sin_tel)
     let list = mainTab === "contactados" ? [...pas] : pas.filter(p => p.prioridad === vista || vista === "todos");
+    // hide descartados unless explicitly showing them
     if (!mostrarDescartados) list = list.filter(p => !descartados[p.id]);
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
     if (mainTab === "contactos") {
       list = list.filter(p => !(historial[p.id] || []).length);
-      // Fix 9: filtrar solo con recordatorio hoy/vencido
-      if (soloConRecordatorio) {
-        const hoy = new Date().toISOString().slice(0, 10);
-        list = list.filter(p => recordatorios?.[p.id] && recordatorios[p.id] <= hoy);
-      }
     } else if (mainTab === "contactados") {
       list = list.filter(p => (historial[p.id] || []).length > 0);
-      if (filtroResp === "positivo")         list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
-      else if (filtroResp === "volver")      list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
-      else if (filtroResp === "negativo")    list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
+      if (filtroResp === "positivo")       list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
+      else if (filtroResp === "volver")    list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
+      else if (filtroResp === "negativo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
+      else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
+    } else {
+      if (filtroResp === "sin_contactar")  list = list.filter(p => !(historial[p.id] || []).length);
+      else if (filtroResp === "positivo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo")));
+      else if (filtroResp === "volver")    list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar")));
+      else if (filtroResp === "negativo")  list = list.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_negativo")));
       else if (filtroResp === "derivadores") list = list.filter(p => derivadores[p.id]);
     }
     return list;
-  }, [pas, vista, busqueda, filtroResp, historial, derivadores, mainTab, descartados, mostrarDescartados, soloConRecordatorio, recordatorios]);
+  }, [pas, vista, busqueda, filtroResp, historial, derivadores, mainTab, descartados, mostrarDescartados]);
 
-  // Fix 3: paginación separada por tab
-  const paginatedContactos    = useMemo(() => filtered.slice(pageContactos * PER_PAGE, (pageContactos + 1) * PER_PAGE), [filtered, pageContactos]);
-  const paginatedContactados  = useMemo(() => filtered.slice(pageContactados * PER_PAGE, (pageContactados + 1) * PER_PAGE), [filtered, pageContactados]);
-  const totalPagesContactos   = Math.ceil(filtered.length / PER_PAGE);
-  const totalPagesContactados = Math.ceil(filtered.length / PER_PAGE);
+  const paginated  = useMemo(() => filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE), [filtered, page]);
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const nDerivadores = useMemo(() => Object.values(derivadores).filter(Boolean).length, [derivadores]);
   const stats = useMemo(() => ({
     contactados: pas.filter(p => (historial[p.id] || []).length > 0).length,
     positivos:   pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("respondio_positivo"))).length,
     derivadores: nDerivadores,
-    sinTel:      pas.filter(p => p.prioridad === "sin_tel" && !descartados[p.id]).length,
-  }), [pas, historial, nDerivadores, descartados]);
+  }), [pas, historial, nDerivadores]);
 
   const VISTAS_C = [
     { key: "agendado", label: "Agendados",  color: "#6366f1" },
@@ -1333,12 +1271,7 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               {pas.length > 0 && (
                 <div style={{ display: "flex", gap: 14, textAlign: "right" }}>
-                  {[
-                    { v: stats.contactados, l: "contactados", c: "#6366f1" },
-                    { v: stats.positivos,   l: "positivos",   c: "#22c55e" },
-                    { v: stats.derivadores, l: "derivadores", c: "#eab308" },
-                    { v: stats.sinTel,      l: "sin tel",     c: "#475569" },
-                  ].map(s => (
+                  {[{ v: stats.contactados, l: "contactados", c: "#6366f1" }, { v: stats.positivos, l: "positivos", c: "#22c55e" }, { v: stats.derivadores, l: "derivadores", c: "#eab308" }].map(s => (
                     <div key={s.l}><div style={{ fontSize: 18, fontWeight: 800, color: s.c }}>{s.v}</div><div style={{ fontSize: 10, color: subColor }}>{s.l}</div></div>
                   ))}
                 </div>
@@ -1359,12 +1292,7 @@ export default function App() {
 
           <div style={{ display: "flex", gap: 4, marginBottom: pas.length > 0 ? 12 : 0 }}>
             {TABS.map(t => (
-              <button key={t.k} onClick={() => {
-                setMainTab(t.k);
-                setExpandedId(null);
-                if (t.k === "contactos")   { setFiltroResp("sin_contactar"); setPageContactos(0); setSoloConRecordatorio(false); }
-                if (t.k === "contactados") { setFiltroResp("todos"); setPageContactados(0); setBusqueda(""); }
-              }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid", borderColor: mainTab === t.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: mainTab === t.k ? "#6366f133" : darkMode ? "#0a0f1e" : "#f8fafc", color: mainTab === t.k ? "#818cf8" : subColor, fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>{t.l}</button>
+              <button key={t.k} onClick={() => { setMainTab(t.k); if (t.k === "contactos") { setFiltroResp("sin_contactar"); setPage(0); } if (t.k === "contactados") { setFiltroResp("todos"); setPage(0); setBusqueda(""); } }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid", borderColor: mainTab === t.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: mainTab === t.k ? "#6366f133" : darkMode ? "#0a0f1e" : "#f8fafc", color: mainTab === t.k ? "#818cf8" : subColor, fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>{t.l}</button>
             ))}
           </div>
 
@@ -1381,30 +1309,23 @@ export default function App() {
             <>
               <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
                 {VISTAS_C.map(v => (
-                  <button key={v.key} onClick={() => { setVista(v.key); setPageContactos(0); }} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: "1px solid", borderColor: vista === v.key ? v.color : darkMode ? "#1e293b" : "#e2e8f0", background: vista === v.key ? v.color + "22" : darkMode ? "#0a0f1e" : "#f8fafc", color: vista === v.key ? v.color : subColor, fontSize: 10, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>
+                  <button key={v.key} onClick={() => { setVista(v.key); setPage(0); setBusqueda(""); }} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: "1px solid", borderColor: vista === v.key ? v.color : darkMode ? "#1e293b" : "#e2e8f0", background: vista === v.key ? v.color + "22" : darkMode ? "#0a0f1e" : "#f8fafc", color: vista === v.key ? v.color : subColor, fontSize: 10, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}>
                     {v.label}<br /><span style={{ fontSize: 13, fontWeight: 800 }}>{pas.filter(p => v.key === "todos" || p.prioridad === v.key).length.toLocaleString("es-AR")}</span>
                   </button>
                 ))}
               </div>
-              {/* Fix 5: buscador no limpia al cambiar vista */}
-              <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPageContactos(0); }} placeholder="🔍  Buscar por nombre, mail o teléfono..."
+              <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPage(0); }} placeholder="🔍  Buscar por nombre, mail o teléfono..."
                 style={{ ...iStyle, marginBottom: 8 }} />
-              {/* Fix 9: filtro recordatorios urgentes */}
-              {Object.values(recordatorios).filter(r => r && r <= new Date().toISOString().slice(0,10)).length > 0 && (
-                <button onClick={() => setSoloConRecordatorio(r => !r)} style={{ width: "100%", marginBottom: 8, background: soloConRecordatorio ? "#f9731622" : "transparent", border: `1px solid ${soloConRecordatorio ? "#f97316" : darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 8, color: soloConRecordatorio ? "#f97316" : subColor, padding: "7px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                  ⏰ {soloConRecordatorio ? "Mostrando solo con recordatorio" : "Ver solo con recordatorio pendiente"}
-                </button>
-              )}
             </>
           )}
 
           {pas.length > 0 && mainTab === "contactados" && (
             <>
-              <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPageContactados(0); }} placeholder="🔍  Buscar contactado..."
+              <input value={busqueda} onChange={e => { setBusqueda(e.target.value); setPage(0); }} placeholder="🔍  Buscar contactado..."
                 style={{ ...iStyle, marginBottom: 8 }} />
               <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 2 }}>
                 {[{ k: "todos", l: "Todos" }, { k: "positivo", l: "🟢 Positivos" }, { k: "volver", l: "🔁 Volver a contactar" }, { k: "negativo", l: "🔴 Negativos" }, { k: "derivadores", l: "☑️ Derivadores" }].map(f => (
-                  <button key={f.k} onClick={() => { setFiltroResp(f.k); setPageContactados(0); }} style={{ padding: "5px 11px", borderRadius: 20, border: "1px solid", borderColor: filtroResp === f.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: filtroResp === f.k ? "#6366f122" : darkMode ? "#0a0f1e" : "#f8fafc", color: filtroResp === f.k ? "#818cf8" : subColor, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{f.l}</button>
+                  <button key={f.k} onClick={() => { setFiltroResp(f.k); setPage(0); }} style={{ padding: "5px 11px", borderRadius: 20, border: "1px solid", borderColor: filtroResp === f.k ? "#6366f1" : darkMode ? "#1e293b" : "#e2e8f0", background: filtroResp === f.k ? "#6366f122" : darkMode ? "#0a0f1e" : "#f8fafc", color: filtroResp === f.k ? "#818cf8" : subColor, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{f.l}</button>
                 ))}
               </div>
             </>
@@ -1413,8 +1334,7 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 14px 48px" }}>
-        {/* Fix 15: loading con mensaje progresivo */}
-        {loading && <div style={{ textAlign: "center", padding: 48, color: "#64748b" }}><div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div><div>{loadingMsg}</div></div>}
+        {loading && <div style={{ textAlign: "center", padding: 48, color: "#64748b" }}><div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div><div>Procesando el archivo...</div></div>}
 
         {!loading && pas.length === 0 && (
           <div style={{ textAlign: "center", padding: 64 }}>
@@ -1432,19 +1352,19 @@ export default function App() {
           <>
             <div style={{ fontSize: 12, color: subColor, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
               <span>{filtered.length.toLocaleString("es-AR")} resultados</span>
-              {totalPagesContactos > 1 && <span>Pág {pageContactos + 1} / {totalPagesContactos}</span>}
+              {totalPages > 1 && <span>Pág {page + 1} / {totalPages}</span>}
             </div>
-            {paginatedContactos.map(p => (
+            {paginated.map(p => (
               <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
                 onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
                 onToggleDescartado={handleToggleDescartado} descartados={descartados}
                 expanded={expandedId === p.id} onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 darkMode={darkMode} />
             ))}
-            {totalPagesContactos > 1 && (
+            {totalPages > 1 && (
               <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 20 }}>
-                <button onClick={() => setPageContactos(p => Math.max(0, p - 1))} disabled={pageContactos === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: pageContactos === 0 ? "#1e293b" : "#94a3b8", cursor: pageContactos === 0 ? "default" : "pointer" }}>← Anterior</button>
-                <button onClick={() => setPageContactos(p => Math.min(totalPagesContactos - 1, p + 1))} disabled={pageContactos >= totalPagesContactos - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: pageContactos >= totalPagesContactos - 1 ? "#1e293b" : "#94a3b8", cursor: pageContactos >= totalPagesContactos - 1 ? "default" : "pointer" }}>Siguiente →</button>
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page === 0 ? "#1e293b" : "#94a3b8", cursor: page === 0 ? "default" : "pointer" }}>← Anterior</button>
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page >= totalPages - 1 ? "#1e293b" : "#94a3b8", cursor: page >= totalPages - 1 ? "default" : "pointer" }}>Siguiente →</button>
               </div>
             )}
           </>
@@ -1454,7 +1374,7 @@ export default function App() {
           <>
             <div style={{ fontSize: 12, color: subColor, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
               <span>{filtered.length.toLocaleString("es-AR")} contactados</span>
-              {totalPagesContactados > 1 && <span>Pág {pageContactados + 1} / {totalPagesContactados}</span>}
+              {totalPages > 1 && <span>Pág {page + 1} / {totalPages}</span>}
             </div>
             {filtered.length === 0 && (
               <div style={{ textAlign: "center", padding: 48, color: subColor }}>
@@ -1462,17 +1382,17 @@ export default function App() {
                 <div style={{ fontSize: 14 }}>No hay contactados con ese filtro</div>
               </div>
             )}
-            {paginatedContactados.map(p => (
+            {paginated.map(p => (
               <PASCard key={p.id} pas={p} historial={historial} derivadores={derivadores} recordatorios={recordatorios}
                 onContactar={setModalPas} onToggleDerivador={handleToggleDerivador}
                 onToggleDescartado={handleToggleDescartado} descartados={descartados}
                 expanded={expandedId === p.id} onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 darkMode={darkMode} />
             ))}
-            {totalPagesContactados > 1 && (
+            {totalPages > 1 && (
               <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 20 }}>
-                <button onClick={() => setPageContactados(p => Math.max(0, p - 1))} disabled={pageContactados === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: pageContactados === 0 ? "#1e293b" : "#94a3b8", cursor: pageContactados === 0 ? "default" : "pointer" }}>← Anterior</button>
-                <button onClick={() => setPageContactados(p => Math.min(totalPagesContactados - 1, p + 1))} disabled={pageContactados >= totalPagesContactados - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: pageContactados >= totalPagesContactados - 1 ? "#1e293b" : "#94a3b8", cursor: pageContactados >= totalPagesContactados - 1 ? "default" : "pointer" }}>Siguiente →</button>
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page === 0 ? "#1e293b" : "#94a3b8", cursor: page === 0 ? "default" : "pointer" }}>← Anterior</button>
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page >= totalPages - 1 ? "#1e293b" : "#94a3b8", cursor: page >= totalPages - 1 ? "default" : "pointer" }}>Siguiente →</button>
               </div>
             )}
             {/* Mostrar/ocultar descartados */}
