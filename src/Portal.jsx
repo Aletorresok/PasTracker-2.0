@@ -13,7 +13,7 @@ const ESTADOS_CASO = [
 ];
 
 const estadoInfo = k => ESTADOS_CASO.find(e => e.key === k) || ESTADOS_CASO[0];
-const fmtDate = iso => { if (!iso) return "—"; return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }); };
+const fmtDate = iso => { if (!iso) return "—"; const [y,m,d] = iso.slice(0,10).split("-"); return `${d}/${m}/${String(y).slice(-2)}`; };
 const fmtMoney = n => { if (n === null || n === undefined || n === "") return "—"; return "$" + Number(n).toLocaleString("es-AR"); };
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
@@ -279,7 +279,30 @@ function PortalHome({ session, onLogout, dark, onToggleDark }) {
       const { data: pas } = await supabase.from("pas_lista").select("nombre, mail, telefonos").eq("pas_id", link.pas_id).single();
       setPasInfo(pas);
       const { data: casosData } = await supabase.from("pas_casos").select("*").eq("pas_id", link.pas_id);
-      setCasos(casosData || []);
+      const realCasos = casosData || [];
+      if (realCasos.length === 0) {
+        setCasos([{
+          id: "demo",
+          asegurado: "Ejemplo: García Juan (caso de demostración)",
+          estado: "reclamado",
+          fecha_derivacion: new Date().toISOString().slice(0,10),
+          fecha_contacto_asegurado: new Date(Date.now() - 3*86400000).toISOString().slice(0,10),
+          fecha_inicio_reclamo: new Date(Date.now() - 2*86400000).toISOString().slice(0,10),
+          fecha_ultimo_movimiento: new Date().toISOString().slice(0,10),
+          monto_ofrecimiento: "",
+          monto_cobro_asegurado: "",
+          monto_cobro_yo: "",
+          monto_comision_pas: "",
+          nota: "Este es un caso de ejemplo para que puedas ver cómo se verán tus casos reales.",
+          notas_log: [
+            { texto: "Se inició el reclamo ante la aseguradora del tercero.", fecha: new Date(Date.now() - 2*86400000).toISOString().slice(0,10), ts: Date.now() - 200000 },
+            { texto: "Tomé contacto con el asegurado. Nos envió la documentación.", fecha: new Date(Date.now() - 3*86400000).toISOString().slice(0,10), ts: Date.now() - 300000 },
+          ],
+          _demo: true,
+        }]);
+      } else {
+        setCasos(realCasos);
+      }
       setLoading(false);
     };
     loadData();
@@ -381,6 +404,11 @@ function PortalHome({ session, onLogout, dark, onToggleDark }) {
         </div>
 
         {/* Casos */}
+        {casos.length > 0 && casos[0]?._demo && (
+          <div style={{ background: "#6366f118", border: "1px solid #6366f144", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#818cf8" }}>
+            👋 Todavía no tenés casos asignados. Este es un ejemplo de cómo se verán.
+          </div>
+        )}
         {casosFiltrados.length === 0 ? (
           <div style={{ textAlign: "center", padding: "50px 20px" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
