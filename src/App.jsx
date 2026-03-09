@@ -13,6 +13,7 @@ const RESULTADOS_CONTACTO = [
 ];
 
 const ESTADOS_CASO = [
+  { key: "doc_pendiente",     label: "Doc. pendiente",    color: "#a855f7", emoji: "📎" },
   { key: "iniciado",          label: "Iniciado",          color: "#64748b", emoji: "📋" },
   { key: "reclamado",         label: "Reclamado",         color: "#6366f1", emoji: "📨" },
   { key: "con_ofrecimiento",  label: "Con ofrecimiento",  color: "#f97316", emoji: "💬" },
