@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 
 const ESTADOS_CASO = [
+  { key: "doc_pendiente",    label: "Doc. pendiente",   emoji: "📎", color: "#a855f7" },
   { key: "iniciado",         label: "Iniciado",         emoji: "📋", color: "#64748b" },
   { key: "reclamado",        label: "Reclamado",        emoji: "📨", color: "#3b82f6" },
   { key: "con_ofrecimiento", label: "Ofrecimiento",     emoji: "💬", color: "#f97316" },
@@ -120,11 +121,19 @@ function PortalCasoCard({ caso }) {
   );
 }
 
-function LoginScreen() {
+function LoginScreen({ darkMode = true, onToggleDark }) {
   const [email, setEmail]     = useState("");
   const [pwd,   setPwd]       = useState("");
   const [error, setError]     = useState("");
   const [load,  setLoad]      = useState(false);
+  const LBG   = darkMode ? "#060d1a" : "#f1f5f9";
+  const LCARD = darkMode ? "#0a1628" : "#ffffff";
+  const LBOR  = darkMode ? "#1a2f4a" : "#e2e8f0";
+  const LTEXT = darkMode ? "#f1f5f9" : "#1e293b";
+  const LMUT  = darkMode ? "#475569" : "#94a3b8";
+  const LINPS = darkMode
+    ? { background: "#0f1e35", border: "1px solid #1e3a5f", borderRadius: 10, color: "#f1f5f9", padding: "10px 14px", fontSize: 14, width: "100%", boxSizing: "border-box", outline: "none" }
+    : { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, color: "#1e293b", padding: "10px 14px", fontSize: 14, width: "100%", boxSizing: "border-box", outline: "none" };
 
   const handleLogin = async () => {
     if (!email.trim() || !pwd.trim()) return;
@@ -135,21 +144,24 @@ function LoginScreen() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: CARD, border: `1px solid ${BOR}`, borderRadius: 18, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 60px #000a" }}>
+    <div style={{ minHeight: "100vh", background: LBG, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ position: "absolute", top: 16, right: 16 }}>
+        <button onClick={onToggleDark} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>{darkMode ? "☀️" : "🌙"}</button>
+      </div>
+      <div style={{ background: LCARD, border: `1px solid ${LBOR}`, borderRadius: 18, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 60px #000a" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
           <div style={{ fontSize: 11, color: "#6366f1", textTransform: "uppercase", letterSpacing: 2, marginBottom: 6 }}>PAS Tracker</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: TEXT }}>Portal de Derivadores</div>
-          <div style={{ fontSize: 13, color: MUT, marginTop: 6 }}>Ingresá para ver el estado de tus casos</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: LTEXT }}>Portal de Derivadores</div>
+          <div style={{ fontSize: 13, color: LMUT, marginTop: 6 }}>Ingresá para ver el estado de tus casos</div>
         </div>
         <label style={{ display: "block", marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: MUT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Email</div>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="tu@mail.com" style={INPS} />
+          <div style={{ fontSize: 11, color: LMUT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Email</div>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="tu@mail.com" style={LINPS} />
         </label>
         <label style={{ display: "block", marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: MUT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Contraseña</div>
-          <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="••••••••" style={INPS} />
+          <div style={{ fontSize: 11, color: LMUT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Contraseña</div>
+          <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="••••••••" style={LINPS} />
         </label>
         {error && <div style={{ background: "#ef444422", border: "1px solid #ef444466", borderRadius: 8, padding: "8px 12px", color: "#ef4444", fontSize: 13, marginBottom: 16, textAlign: "center" }}>{error}</div>}
         <button onClick={handleLogin} disabled={load || !email.trim() || !pwd.trim()} style={{ width: "100%", background: load ? "#334155" : "#6366f1", border: "none", borderRadius: 10, color: "white", padding: "12px", cursor: load ? "default" : "pointer", fontSize: 15, fontWeight: 700 }}>
@@ -199,7 +211,7 @@ function CambiarPasswordModal({ onClose }) {
   );
 }
 
-function PortalHome({ session, onLogout }) {
+function PortalHome({ session, onLogout, darkMode = true, onToggleDark }) {
   const [pasInfo, setPasInfo]   = useState(null);
   const [casos,   setCasos]     = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -239,15 +251,16 @@ function PortalHome({ session, onLogout }) {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, color: TEXT }}>
-      <div style={{ background: CARD, borderBottom: `1px solid ${BOR}`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+    <div style={{ minHeight: "100vh", background: darkMode ? BG : "#f1f5f9", color: darkMode ? TEXT : "#1e293b" }}>
+      <div style={{ background: darkMode ? CARD : "#ffffff", borderBottom: `1px solid ${darkMode ? BOR : "#e2e8f0"}`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
         <div>
           <div style={{ fontSize: 11, color: "#6366f1", textTransform: "uppercase", letterSpacing: 2 }}>PAS Tracker</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: TEXT }}>{pasInfo?.nombre || "Portal"}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setCambPwd(true)} style={{ background: CARD2, border: `1px solid ${BOR}`, borderRadius: 8, color: MUT, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>🔒 Contraseña</button>
-          <button onClick={onLogout} style={{ background: CARD2, border: `1px solid ${BOR}`, borderRadius: 8, color: MUT, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Salir</button>
+          <button onClick={onToggleDark} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 14 }}>{darkMode ? "☀️" : "🌙"}</button>
+          <button onClick={() => setCambPwd(true)} style={{ background: darkMode ? "#0f1e35" : "#e2e8f0", border: `1px solid ${darkMode ? "#1a2f4a" : "#e2e8f0"}`, borderRadius: 8, color: darkMode ? "#475569" : "#64748b", padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>🔒 Contraseña</button>
+          <button onClick={onLogout} style={{ background: darkMode ? "#0f1e35" : "#e2e8f0", border: `1px solid ${darkMode ? "#1a2f4a" : "#e2e8f0"}`, borderRadius: 8, color: darkMode ? "#475569" : "#64748b", padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Salir</button>
         </div>
       </div>
 
@@ -301,6 +314,7 @@ function PortalHome({ session, onLogout }) {
 
 export default function Portal() {
   const [session, setSession] = useState(undefined);
+  const [darkMode, setDarkMode] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -309,6 +323,6 @@ export default function Portal() {
   }, []);
 
   if (session === undefined) return <div style={{ minHeight: "100vh", background: "#060d1a", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#475569" }}>Cargando...</div></div>;
-  if (!session) return <LoginScreen />;
-  return <PortalHome session={session} onLogout={() => supabase.auth.signOut()} />;
+  if (!session) return <LoginScreen darkMode={darkMode} onToggleDark={() => setDarkMode(d => !d)} />;
+  return <PortalHome session={session} darkMode={darkMode} onToggleDark={() => setDarkMode(d => !d)} onLogout={() => supabase.auth.signOut()} />;
 }
