@@ -1117,7 +1117,7 @@ function TabPortalUsuarios({ pas, derivadores, darkMode }) {
     setLoading(false);
   };
 
-  const withUser = new Set((portalUsers || []).map(u => u.pas_id));
+  const withUser = new Set((portalUsers || []).map(u => Number(u.pas_id)));
   const derivadoresList = pas.filter(p => derivadores[p.id]);
 
   const handleCrear = async () => {
@@ -1171,7 +1171,7 @@ function TabPortalUsuarios({ pas, derivadores, darkMode }) {
         <div style={{ textAlign: "center", padding: 24, color: darkMode ? "#475569" : "#94a3b8" }}>Cargando...</div>
       ) : (
         derivadoresList.map(p => {
-          const tieneAcceso = withUser.has(p.id);
+          const tieneAcceso = withUser.has(Number(p.id));
           return (
             <div key={p.id} style={{ background: darkMode ? "#0a1628" : "#f8fafc", border: `1px solid ${tieneAcceso ? "#22c55e44" : darkMode ? "#1a2f4a" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
