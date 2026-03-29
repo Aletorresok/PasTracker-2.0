@@ -1,0 +1,52 @@
+/* Configuración de colores y fuentes */
+:root {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Paleta profesional oscura */
+  color-scheme: dark;
+  background-color: #0f172a; /* Azul noche muy oscuro */
+  color: #f1f5f9; /* Blanco grisáceo para no encandilar */
+}
+
+/* Reseteo básico para que ocupe toda la pantalla del programa */
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Estilos para que las tablas y tarjetas se vean modernas */
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+}
+
+/* Mejora de los inputs y botones que ya tienes en tus archivos JSX */
+input, button, select {
+  font-family: inherit;
+}
+
+button:hover {
+  filter: brightness(1.1);
+  transition: all 0.2s ease;
+}
+
+/* Animación suave para cuando cambies entre pestañas de casos */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
