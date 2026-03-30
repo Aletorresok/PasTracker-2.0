@@ -356,7 +356,7 @@ function ContactModal({ pas, onClose, onSave, darkMode }) {
         </label>
 
         <div style={{ marginBottom: 16 }}>
-          <span style={lStyle}>Resultado — podés seleccionar más de uno</span>
+          <span style={lStyle}>Resultado — opcional, podés cargarlo después</span>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
             {RESULTADOS_CONTACTO.map(r => {
               const sel = resultados.includes(r.key);
@@ -692,7 +692,7 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: c.nota ? 4 : 0 }}>
                         {keys.map(k => { const ri = RESULTADOS_CONTACTO.find(r => r.key === k); return ri ? <Badge key={k} color={ri.color}>{ri.label}</Badge> : null; })}
-                        {!keys.length && <Badge color="#94a3b8">Sin resultado</Badge>}
+                        {!keys.length && <Badge color={i === contactos.length - 1 ? "#f97316" : "#94a3b8"}>Sin resultado</Badge>}
                       </div>
                       {c.nota && <div style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#475569" }}>{c.nota}</div>}
                     </div>
@@ -702,7 +702,10 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
             </div>
           )}
 
-          <button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#6366f1", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>+ Registrar contacto</button>
+          {ultimo && !ultimosResultados.length && (
+  <button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#f97316", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📬 Registrar respuesta</button>
+)}
+<button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#6366f1", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>+ Registrar contacto</button>
         </div>
       )}
     </div>
