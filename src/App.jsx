@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from './supabase.js'
+import { createClient } from '@supabase/supabase-js'
+
+// Cliente separado para Agenda Legal (proyecto distinto)
+const supabaseAgenda = createClient(
+  'https://ecefqwbqunqzbpwgsnmb.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjZWZxd2JxdW5xemJwd2dzbm1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMzY4OTMsImV4cCI6MjA4NzYxMjg5M30.Z02Jk-z_CyDceMz0LYl8eMVCj4KhXwW55UcxtEifbpo'
+)
 import CasoDetalle from './CasoDetalle.jsx'
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
@@ -99,7 +106,7 @@ function buildAgendaCaso(caso, pasNombre) {
 async function syncCasoToAgenda(caso, pasNombre) {
   try {
     const row = buildAgendaCaso(caso, pasNombre);
-    const { error } = await supabase.from("casos").upsert(row, { onConflict: "id" });
+    const { error } = await supabaseAgenda.from("casos").upsert(row, { onConflict: "id" });
     if (error) console.error("[sync→AgendaLegal] upsert error:", error);
   } catch (e) {
     console.error("[sync→AgendaLegal] exception:", e);
@@ -108,7 +115,7 @@ async function syncCasoToAgenda(caso, pasNombre) {
 
 async function deleteCasoFromAgenda(casoId) {
   try {
-    await supabase.from("casos").delete().eq("id", `pas_${casoId}`);
+    await supabaseAgenda.from("casos").delete().eq("id", `pas_${casoId}`);
   } catch (e) {
     console.error("[sync→AgendaLegal] delete error:", e);
   }

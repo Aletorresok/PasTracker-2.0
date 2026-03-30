@@ -5,6 +5,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase.js";
+import { createClient } from '@supabase/supabase-js';
+
+// Cliente separado para Agenda Legal (proyecto distinto)
+const supabaseAgenda = createClient(
+  'https://ecefqwbqunqzbpwgsnmb.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjZWZxd2JxdW5xemJwd2dzbm1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMzY4OTMsImV4cCI6MjA4NzYxMjg5M30.Z02Jk-z_CyDceMz0LYl8eMVCj4KhXwW55UcxtEifbpo'
+);
 
 // ── TIPOS DE DOCUMENTOS ───────────────────────────────────────────────────────
 const TIPOS_DOC = ["DNI", "CEDULA", "DENUNCIA", "CERTIFICADO", "LICENCIA", "PRESUPUESTO", "ESCRITO", "FOTO"];
@@ -400,9 +407,9 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
     const { data } = await supabase.from("acciones").insert(nueva).select().single();
     if (data) setAcciones(prev => [data, ...prev]);
 
-    // Sincronizar a Agenda Legal (misma base de datos, caso_id con prefijo pas_)
+    // Sincronizar a Agenda Legal (proyecto distinto, caso_id con prefijo pas_)
     try {
-      await supabase.from("acciones").insert({
+      await supabaseAgenda.from("acciones").insert({
         ...nueva,
         caso_id: `pas_${caso.id}`,
       });
