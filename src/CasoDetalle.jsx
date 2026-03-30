@@ -173,6 +173,32 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
   const [acciones, setAcciones] = useState([]);
   const [loadingAcciones, setLoadingAcciones] = useState(false);
 
+  // ── Feature 2: Leer archivos de la carpeta ──
+  const leerArchivos = useCallback(async (handle) => {
+    if (!handle) return;
+    const permiso = await verificarPermiso(handle, "read");
+    if (!permiso) {
+      setToast({ msg: "Sin permiso de lectura en la carpeta", type: "error" });
+      return;
+    }
+    setLoadingArchivos(true);
+    try {
+      const lista = [];
+      for await (const entry of handle.values()) {
+        if (entry.kind !== "file") continue;
+        const ext = getExtension(entry.name);
+        if (!EXTENSIONES_VALIDAS.includes(ext)) continue;
+        const file = await entry.getFile();
+        lista.push({ nombre: entry.name, tipo: file.type, tamaño: file.size, ext, blob: file, handle: entry });
+      }
+      setArchivos(lista);
+    } catch (e) {
+      setToast({ msg: `Error al leer archivos: ${e.message}`, type: "error" });
+    } finally {
+      setLoadingArchivos(false);
+    }
+  }, []);
+
   // ── Restaurar handle desde cache en memoria al montar ──
   // El File System Access API no permite serializar handles a disco,
   // pero _dirHandleCache los mantiene en memoria mientras la app esté abierta.
@@ -199,32 +225,6 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
     };
     cargarAcciones();
   }, [caso.id]);
-
-  // ── Feature 2: Leer archivos de la carpeta ──
-  const leerArchivos = useCallback(async (handle) => {
-    if (!handle) return;
-    const permiso = await verificarPermiso(handle, "read");
-    if (!permiso) {
-      setToast({ msg: "Sin permiso de lectura en la carpeta", type: "error" });
-      return;
-    }
-    setLoadingArchivos(true);
-    try {
-      const lista = [];
-      for await (const entry of handle.values()) {
-        if (entry.kind !== "file") continue;
-        const ext = getExtension(entry.name);
-        if (!EXTENSIONES_VALIDAS.includes(ext)) continue;
-        const file = await entry.getFile();
-        lista.push({ nombre: entry.name, tipo: file.type, tamaño: file.size, ext, blob: file, handle: entry });
-      }
-      setArchivos(lista);
-    } catch (e) {
-      setToast({ msg: `Error al leer archivos: ${e.message}`, type: "error" });
-    } finally {
-      setLoadingArchivos(false);
-    }
-  }, []);
 
   // ── Feature 1: Crear carpeta local ──
   const crearCarpeta = async () => {

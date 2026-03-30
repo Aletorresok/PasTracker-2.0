@@ -100,7 +100,9 @@ async function syncCasoToAgenda(caso, pasNombre) {
   try {
     const row = buildAgendaCaso(caso, pasNombre);
     const { error } = await supabase.from("casos").upsert(row, { onConflict: "id" });
-    if (error) console.error("[sync→AgendaLegal] upsert error:", error);
+    if (error && error.code !== 'PGRST116' && !error.message?.includes('404')) {
+      console.error("[sync→AgendaLegal] upsert error:", error);
+    }
   } catch (e) {
     console.error("[sync→AgendaLegal] exception:", e);
   }
@@ -222,10 +224,16 @@ async function loadStorage(key) {
 async function saveStorage(key, val) {
   try {
     if (key === 'pas_historial') {
-      await supabase.from('pas_historial').delete().neq('pas_id', -1)
+      // Cargar los ts ya existentes para insertar solo los nuevos
+      const { data: existing } = await supabase.from('pas_historial').select('ts')
+      const existingTs = new Set((existing || []).map(r => String(r.ts)))
       const rows = []
       Object.entries(val).forEach(([pas_id, contactos]) => {
-        contactos.forEach(c => rows.push({ pas_id: Number(pas_id), fecha: c.fecha, resultados: c.resultados, nota: c.nota, ts: c.ts }))
+        contactos.forEach(c => {
+          if (!existingTs.has(String(c.ts))) {
+            rows.push({ pas_id: Number(pas_id), fecha: c.fecha, resultados: c.resultados, nota: c.nota, ts: c.ts })
+          }
+        })
       })
       if (rows.length) await supabase.from('pas_historial').insert(rows)
     }
@@ -257,28 +265,36 @@ async function saveStorage(key, val) {
       if (rows.length) {
         await supabase.from('pas_casos').upsert(rows, { onConflict: 'caso_id' })
       }
-      const casosIds = rows.map(r => r.caso_id)
-      const allPasIds = Object.keys(val).map(Number)
-      if (allPasIds.length) {
-        const { data: existing } = await supabase.from('pas_casos').select('caso_id').in('pas_id', allPasIds)
-        const toDelete = (existing || []).map(r => r.caso_id).filter(id => !casosIds.includes(id))
-        if (toDelete.length) await supabase.from('pas_casos').delete().in('caso_id', toDelete)
-      }
     }
     if (key === 'pas_derivadores') {
-      await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
-      if (rows.length) await supabase.from('pas_derivadores').insert(rows)
+      if (rows.length) await supabase.from('pas_derivadores').upsert(rows, { onConflict: 'pas_id' })
+      const activeIds = rows.map(r => r.pas_id)
+      if (activeIds.length) {
+        await supabase.from('pas_derivadores').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
+      } else {
+        await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
+      }
     }
     if (key === 'pas_recordatorios') {
-      await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id, fecha]) => ({ pas_id: Number(pas_id), fecha_recordatorio: fecha }))
-      if (rows.length) await supabase.from('pas_recordatorios').insert(rows)
+      if (rows.length) await supabase.from('pas_recordatorios').upsert(rows, { onConflict: 'pas_id' })
+      const activeIds = rows.map(r => r.pas_id)
+      if (activeIds.length) {
+        await supabase.from('pas_recordatorios').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
+      } else {
+        await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
+      }
     }
     if (key === 'pas_descartados') {
-      await supabase.from('pas_descartados').delete().neq('pas_id', -1)
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
-      if (rows.length) await supabase.from('pas_descartados').insert(rows)
+      if (rows.length) await supabase.from('pas_descartados').upsert(rows, { onConflict: 'pas_id' })
+      const activeIds = rows.map(r => r.pas_id)
+      if (activeIds.length) {
+        await supabase.from('pas_descartados').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
+      } else {
+        await supabase.from('pas_descartados').delete().neq('pas_id', -1)
+      }
     }
     if (key === 'pas_lista') {
       await supabase.from('pas_lista').delete().neq('pas_id', -1)
@@ -1466,10 +1482,10 @@ export default function App() {
         try {
           const raw = localStorage.getItem('pastracker_autobackup');
           if (raw) {
-            const b = JSON.parse(raw);
-            if (b.casos && Object.keys(b.casos).length > 0) {
-              setCasos(b.casos);
-              console.warn('[autobackup] Supabase vacío — restaurando backup local del', b.fecha);
+            const bkp = JSON.parse(raw);
+            if (bkp.casos && Object.keys(bkp.casos).length > 0) {
+              setCasos(bkp.casos);
+              console.warn('[autobackup] Supabase vacío — restaurando backup local del', bkp.fecha);
             }
           }
         } catch {}
