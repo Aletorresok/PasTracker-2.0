@@ -58,9 +58,6 @@ function fmtMoney(n) { if (n === null || n === undefined || n === "") return "�
 function diasDesde(iso) { if (!iso) return null; return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
 
 // ── SYNC → AGENDA LEGAL ───────────────────────────────────────────────────────
-// PAS Tracker es la fuente de verdad. Cada vez que se guarda o borra un caso
-// en PAS Tracker, se refleja automáticamente en la tabla `casos` de AgendaLegal.
-
 function mapEstadoPasToAgenda(estado) {
   return {
     doc_pendiente:    "Paralizado",
@@ -143,15 +140,12 @@ async function loadStorage(key) {
           monto_ofrecimiento: row.monto_ofrecimiento, monto_cobro_asegurado: row.monto_cobro_asegurado,
           monto_cobro_yo: row.monto_cobro_yo, monto_comision_pas: row.monto_comision_pas,
           recordatorio: row.recordatorio || null, notas_log: row.notas_log || [],
-          // Feature 1: filesystem
           carpeta_path: row.carpeta_path || null,
           compania: row.compania || null,
           fecha_siniestro: row.fecha_siniestro || null,
-          // Feature 7: negociación
           presupuesto: row.presupuesto || null,
           primer_ofrecimiento: row.primer_ofrecimiento || null,
           segundo_ofrecimiento: row.segundo_ofrecimiento || null,
-          // Feature 8: fechas extendidas
           fecha_carga: row.fecha_carga || null,
           fecha_reclamo: row.fecha_reclamo || null,
           fecha_ultimo_reclamo: row.fecha_ultimo_reclamo || null,
@@ -163,10 +157,8 @@ async function loadStorage(key) {
           fecha_cobro: row.fecha_cobro || null,
           fecha_mediacion: row.fecha_mediacion || null,
           fecha_inicio_juicio: row.fecha_inicio_juicio || null,
-          // Feature 9: acuerdo
           monto_acordado: row.monto_acordado || null,
           plazo_pago: row.plazo_pago || null,
-          // Feature 10: honorarios
           porcentaje_honorarios: row.porcentaje_honorarios || null,
           monto_honorarios: row.monto_honorarios || null,
           estado_honorarios: row.estado_honorarios || 'NO_FACTURADO',
@@ -599,6 +591,73 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
   const txt   = darkMode ? "#f1f5f9" : "#0f172a";
   const sub   = darkMode ? "#94a3b8" : "#475569";
   const mut   = darkMode ? "#64748b" : "#94a3b8";
+
+  return (
+    <div style={{ background: bg, border: `1px solid ${recordatorioVencido ? "#ef444488" : tieneRecordatorio ? "#f9741655" : bor}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <PipelineBar estado={caso.estado} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: txt }}>{caso.asegurado}</div>
+            {caso.compania && <div style={{ fontSize: 11, color: mut, background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 5, padding: "1px 7px", border: `1px solid ${bor}` }}>{caso.compania}</div>}
+            {recordatorioVencido && <Badge color="#ef4444" small>⚠️ rec. vencido</Badge>}
+            {tieneRecordatorio && !recordatorioVencido && <Badge color="#f97316" small>⏰ {fmtDate(caso.recordatorio)}</Badge>}
+          </div>
+          {ultimaAccion && (
+            <div style={{ fontSize: 11, color: mut, marginTop: 4 }}>
+              Última acción: {fmtDate(ultimaAccion.fecha)} · <span style={{ color: sub }}>{ultimaAccion.texto.slice(0, 60)}{ultimaAccion.texto.length > 60 ? "…" : ""}</span>
+            </div>
+          )}
+          {!ultimaAccion && caso.nota && <div style={{ fontSize: 12, color: sub, marginTop: 4 }}>{caso.nota.slice(0, 80)}{caso.nota.length > 80 ? "…" : ""}</div>}
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          {caso.monto_cobro_yo ? <div style={{ fontSize: 14, fontWeight: 800, color: "#6366f1" }}>{fmtMoney(caso.monto_cobro_yo)}</div> : null}
+          {diasUlt !== null && <div style={{ fontSize: 10, color: diasUlt > 30 ? "#ef4444" : mut, marginTop: 2 }}>{diasUlt}d atrás</div>}
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ borderTop: `1px solid ${bor}`, padding: "12px 14px", background: bg2 }}>
+          {caso.fecha_siniestro && <div style={{ fontSize: 11, color: mut, marginBottom: 8 }}>📅 Siniestro: {fmtDate(caso.fecha_siniestro)}</div>}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            {[
+              { l: "Derivación",    v: fmtDate(caso.fecha_derivacion) },
+              { l: "Últ. movimiento", v: fmtDate(caso.fecha_ultimo_movimiento) },
+              { l: "Cobró asegurado", v: fmtMoney(caso.monto_cobro_asegurado) },
+              { l: "Comisión PAS",  v: fmtMoney(caso.monto_comision_pas) },
+            ].map(f => f.v !== "—" ? (
+              <div key={f.l}>
+                <div style={{ fontSize: 9, color: mut, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>{f.l}</div>
+                <div style={{ fontSize: 12, color: sub }}>{f.v}</div>
+              </div>
+            ) : null)}
+          </div>
+
+          {logOrdenado.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 9, color: mut, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>Historial de acciones</div>
+              {logOrdenado.slice(0, 3).map((n, i) => (
+                <div key={n.ts} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: mut, whiteSpace: "nowrap", marginTop: 1 }}>{fmtDate(n.fecha)}</div>
+                  <div style={{ fontSize: 12, color: sub }}>{n.texto}</div>
+                </div>
+              ))}
+              {logOrdenado.length > 3 && <div style={{ fontSize: 11, color: mut }}>+{logOrdenado.length - 3} más...</div>}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 7 }}>
+            <button onClick={() => onDetalle(caso)} style={{ flex: 2, background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#818cf8", padding: "8px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>📋 Ver detalle</button>
+            <button onClick={() => onEdit(caso)} style={{ flex: 1, background: darkMode ? "#1e293b" : "#f1f5f9", border: `1px solid ${bor}`, borderRadius: 8, color: sub, padding: "8px", cursor: "pointer", fontSize: 12 }}>✏️ Editar</button>
+            <button onClick={() => { if (window.confirm(`¿Borrar caso de ${caso.asegurado}?`)) onDelete(caso.id); }} style={{ background: "#ef444415", border: "1px solid #ef444433", borderRadius: 8, color: "#ef4444", padding: "8px 10px", cursor: "pointer", fontSize: 12 }}>🗑</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PAS CARD ──────────────────────────────────────────────────────────────────
 function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onToggleDerivador, onToggleDescartado, descartados, expanded, onToggle, darkMode }) {
   const contactos = historial[pas.id] || [];
@@ -703,9 +762,9 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
           )}
 
           {ultimo && !ultimosResultados.length && (
-  <button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#f97316", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📬 Registrar respuesta</button>
-)}
-<button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#6366f1", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>+ Registrar contacto</button>
+            <button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#f97316", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📬 Registrar respuesta</button>
+          )}
+          <button onClick={() => onContactar(pas)} style={{ width: "100%", background: "#6366f1", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>+ Registrar contacto</button>
         </div>
       )}
     </div>
@@ -825,11 +884,9 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, pasManual
   const [modalNuevoPAS, setModalNuevoPAS] = useState(false);
   const [pasManualEdit, setPasManualEdit] = useState(null);
 
-  // PAS derivadores del Excel + todos los manuales (mezclados)
   const clientes = useMemo(() => {
     const derivs = pas.filter(p => derivadores[p.id]);
     const manualesIds = new Set(pasManuales.map(p => p.id));
-    // evitar duplicados si un manual ya estuviera en el Excel
     const soloDerivs = derivs.filter(p => !manualesIds.has(p.id));
     return [...soloDerivs, ...pasManuales];
   }, [pas, derivadores, pasManuales]);
@@ -891,7 +948,6 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, pasManual
         </div>
       </div>
 
-      {/* Filtro por estado + buscador + exportar + agregar manual */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="🔍  Buscar entre tus clientes PAS..."
           style={{ ...iStyle, flex: 1, minWidth: 180 }} />
@@ -899,7 +955,6 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, pasManual
         <button onClick={exportarExcel} style={{ background: "#22c55e22", border: "1px solid #22c55e44", borderRadius: 8, color: "#22c55e", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>⬇ Exportar Excel</button>
       </div>
 
-      {/* Filtro pipeline */}
       <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
         {[{ key: "todos", label: "Todos", color: "#64748b" }, ...ESTADOS_CASO].map(e => (
           <button key={e.key} onClick={() => setFiltroEstado(e.key)} style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 20, border: "1px solid", borderColor: filtroEstado === e.key ? e.color : darkMode ? "#1e293b" : "#e2e8f0", background: filtroEstado === e.key ? e.color + "22" : darkMode ? "#0a0f1e" : "#f8fafc", color: filtroEstado === e.key ? e.color : "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -972,7 +1027,6 @@ const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov"
 
 function GraficoBarras({ datos, darkMode }) {
   const maxVal = Math.max(...datos.map(d => d.valor), 1);
-  const cardBg = darkMode ? "#0a0f1e" : "#fff";
   const subColor = darkMode ? "#475569" : "#94a3b8";
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 100, paddingBottom: 20, position: "relative" }}>
@@ -1016,12 +1070,9 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const tasaRespuesta      = contactados > 0 ? Math.round(((positivos + negativos + neutros) / contactados) * 100) : 0;
   const tasaPositiva       = contactados > 0 ? Math.round((positivos / contactados) * 100) : 0;
 
-  // ── Métricas de cobro pendiente ──
-  // Honorarios míos pendientes: casos con honorarios facturados o no facturados pero con monto
   const honorariosPendientes = allCasos
     .filter(c => c.estado_honorarios !== "COBRADO" && (Number(c.monto_honorarios) > 0 || Number(c.monto_cobro_yo) > 0))
     .reduce((s, c) => s + (Number(c.monto_honorarios) || Number(c.monto_cobro_yo) || 0), 0);
-  // Cobro pendiente del asegurado: casos en "esperando_pago" con monto asegurado cargado
   const cobroAseguradoPendiente = allCasos
     .filter(c => c.estado === "esperando_pago" && Number(c.monto_cobro_asegurado) > 0)
     .reduce((s, c) => s + (Number(c.monto_cobro_asegurado) || 0), 0);
@@ -1029,7 +1080,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const hoyStr = new Date().toISOString().slice(0, 10);
   const hoy = new Date();
 
-  // ── Facturación por mes (últimos 12 meses) ──
   const facturacionMensual = useMemo(() => {
     const mapa = {};
     allCasos.forEach(c => {
@@ -1048,20 +1098,17 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
     return datos;
   }, [allCasos]);
 
-  // ── Año actual vs año anterior ──
   const anoActual = hoy.getFullYear();
   const cobradoEsteAno  = allCasos.filter(c => c.estado === "cobrado" && c.fecha_ultimo_movimiento?.startsWith(String(anoActual))).reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
   const cobradoAnoAnt   = allCasos.filter(c => c.estado === "cobrado" && c.fecha_ultimo_movimiento?.startsWith(String(anoActual - 1))).reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
   const varAnual = cobradoAnoAnt > 0 ? Math.round(((cobradoEsteAno - cobradoAnoAnt) / cobradoAnoAnt) * 100) : null;
 
-  // ── Mes actual ──
   const mesKey = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
   const cobradoEsteMes = facturacionMensual.find(d => d.key === mesKey)?.valor || 0;
   const mesAntKey = `${hoy.getFullYear()}-${String(hoy.getMonth()).padStart(2, "0")}`;
   const cobradoMesAnt = facturacionMensual.find(d => d.key === mesAntKey)?.valor || 0;
   const varMensual = cobradoMesAnt > 0 ? Math.round(((cobradoEsteMes - cobradoMesAnt) / cobradoMesAnt) * 100) : null;
 
-  // ── Ranking PAS ──
   const rankingPAS = useMemo(() => {
     const todosLosPas = [...pas, ...pasManuales];
     return Object.entries(casos)
@@ -1079,7 +1126,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
   const maxCobrado = rankingPAS.length ? Math.max(...rankingPAS.map(p => p.cobrado), 1) : 1;
 
-  // Recordatorios
   const recsPAS = pas.filter(p => { const r = recordatorios?.[p.id]; return r && r <= hoyStr; });
   const recsCasos = [];
   Object.entries(casos).forEach(([pasId, casosList]) => {
@@ -1094,7 +1140,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
   return (
     <div>
-      {/* ── Resumen general ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Resumen general</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <StatCard label="Total cobrado" value={fmtMoney(totalCobradoYo)} color="#6366f1" dark={darkMode} />
@@ -1103,7 +1148,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         <StatCard label="Casos cobrados" value={cobrados} color="#22c55e" sub={`${enGestion} en gestión`} dark={darkMode} />
       </div>
 
-      {/* ── Cobros pendientes clickeables ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <button onClick={onGoToClientes} style={{ all: "unset", cursor: "pointer", display: "block" }}>
           <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${honorariosPendientes > 0 ? "#6366f144" : darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 12, padding: "12px 14px", transition: "border-color .2s" }}>
@@ -1126,7 +1170,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         <StatCard label="Derivadores" value={nDerivadores} color="#eab308" dark={darkMode} />
       </div>
 
-      {/* ── Tasa de respuesta ── */}
       {contactados > 0 && (
         <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Tasa de respuesta</div>
@@ -1141,7 +1184,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
               <div style={{ fontSize: 11, color: subColor, marginTop: 4 }}>tasa positiva</div>
             </div>
           </div>
-          {/* Barra de distribución */}
           <div style={{ height: 8, borderRadius: 6, overflow: "hidden", display: "flex", marginBottom: 10 }}>
             {positivos > 0  && <div style={{ flex: positivos,  background: "#22c55e" }} title={`Positivos: ${positivos}`} />}
             {neutros > 0    && <div style={{ flex: neutros,    background: "#eab308" }} title={`Neutros: ${neutros}`} />}
@@ -1166,7 +1208,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         </div>
       )}
 
-      {/* ── Facturación ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Facturación</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "12px 14px" }}>
@@ -1189,24 +1230,20 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         </div>
       </div>
 
-      {/* Gráfico de barras */}
       <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px 14px 8px", marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>Últimos 12 meses</div>
         <GraficoBarras datos={facturacionMensual} darkMode={darkMode} />
       </div>
 
-      {/* ── Ranking PAS ── */}
       {rankingPAS.length > 0 && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Ranking PAS</div>
           <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
             {rankingPAS.map((p, i) => (
               <div key={p.nombre} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: i < rankingPAS.length - 1 ? 12 : 0 }}>
-                {/* posición */}
                 <div style={{ width: 22, fontSize: 13, fontWeight: 800, color: i === 0 ? "#eab308" : i === 1 ? "#94a3b8" : i === 2 ? "#f97316" : subColor, textAlign: "center", flexShrink: 0 }}>
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`}
                 </div>
-                {/* nombre + barra */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60%" }}>{p.nombre}</div>
@@ -1223,7 +1260,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         </>
       )}
 
-      {/* ── Pipeline ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: subColor, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Pipeline</div>
       <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: "14px", marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1231,7 +1267,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         </div>
       </div>
 
-      {/* ── Recordatorios ── */}
       {(recsPAS.length > 0 || recsCasos.length > 0) && (
         <div style={{ background: "#f9741611", border: "1px solid #f9741644", borderRadius: 12, padding: "14px", marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: "#f97316", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12, fontWeight: 700 }}>⏰ Recordatorios pendientes</div>
@@ -1264,8 +1299,6 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
     </div>
   );
 }
-
-// ── MAIN APP ──────────────────────────────────────────────────────────────────
 
 // ── TAB PORTAL USUARIOS ────────────────────────────────────────────────────────
 function TabPortalUsuarios({ pas, derivadores, darkMode }) {
@@ -1398,6 +1431,7 @@ function TabPortalUsuarios({ pas, derivadores, darkMode }) {
   );
 }
 
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [pas, setPas]               = useState([]);
   const [historial, setHistorial]   = useState({});
@@ -1456,17 +1490,13 @@ export default function App() {
   }, [historial, modalPas, recordatorios]);
 
   const handleSaveCasos = useCallback(async (pasId, list, pasNombre) => {
-    // 1. Guardar en PAS Tracker (fuente de verdad)
     const prev    = casos[pasId] || [];
     const updated = { ...casos, [pasId]: list };
     setCasos(updated);
     await saveStorage("pas_casos", updated);
 
-    // 2. Sincronizar con AgendaLegal (PAS Tracker manda)
-    // — Upsert todos los casos de la lista actual
     const nombre = pasNombre || (pas.find(p => p.id === pasId)?.nombre) || "";
     await Promise.all(list.map(c => syncCasoToAgenda(c, nombre)));
-    // — Borrar de AgendaLegal los casos que ya no existen en PAS Tracker
     const ids    = new Set(list.map(c => c.id));
     const borrados = prev.filter(c => !ids.has(c.id));
     await Promise.all(borrados.map(c => deleteCasoFromAgenda(c.id)));
@@ -1491,7 +1521,6 @@ export default function App() {
   const handleDeletePasManual = useCallback(async (id) => {
     setPasManuales(prev => prev.filter(p => p.id !== id));
     await deletePasManual(id);
-    // Borrar también los casos asociados
     const updated = { ...casos };
     delete updated[id];
     setCasos(updated);
@@ -1539,9 +1568,7 @@ export default function App() {
   const [mostrarDescartados, setMostrarDescartados] = useState(false);
 
   const filtered = useMemo(() => {
-    // en contactados no aplicar filtro de vista (agendado/multi/sin_tel)
     let list = mainTab === "contactados" ? [...pas] : pas.filter(p => p.prioridad === vista || vista === "todos");
-    // hide descartados unless explicitly showing them
     if (!mostrarDescartados) list = list.filter(p => !descartados[p.id]);
     if (busqueda.trim()) { const q = busqueda.toLowerCase(); list = list.filter(p => p.nombre.toLowerCase().includes(q) || p.mail.toLowerCase().includes(q) || p.telefonos.join(" ").includes(q)); }
     if (mainTab === "contactos") {
@@ -1578,7 +1605,6 @@ export default function App() {
     { key: "todos",    label: "Todos",        color: "#22c55e" },
   ];
 
-  // Recordatorios urgentes para badge en dashboard
   const hoyStr = new Date().toISOString().slice(0, 10);
   const recUrgentes = pas.filter(p => recordatorios?.[p.id] && recordatorios[p.id] <= hoyStr).length
     + Object.values(casos).flat().filter(c => c.recordatorio && c.recordatorio <= hoyStr).length;
@@ -1618,13 +1644,10 @@ export default function App() {
                   ))}
                 </div>
               )}
-              {/* Dark/Light toggle */}
               <button onClick={() => setDarkMode(d => !d)} title={darkMode ? "Modo claro" : "Modo oscuro"} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>
                 {darkMode ? "☀️" : "🌙"}
               </button>
-              {/* Backup */}
               <button onClick={handleBackup} title="Descargar backup" style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>💾</button>
-              {/* Restore */}
               <label title="Restaurar backup" style={{ background: darkMode ? "#1e293b" : "#e2e8f0", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>
                 📂
                 <input type="file" accept=".json" onChange={handleRestore} style={{ display: "none" }} />
@@ -1737,7 +1760,6 @@ export default function App() {
                 <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`, background: darkMode ? "#0a0f1e" : "#f8fafc", color: page >= totalPages - 1 ? "#1e293b" : "#94a3b8", cursor: page >= totalPages - 1 ? "default" : "pointer" }}>Siguiente →</button>
               </div>
             )}
-            {/* Mostrar/ocultar descartados */}
             {Object.values(descartados).filter(Boolean).length > 0 && (
               <button onClick={() => setMostrarDescartados(m => !m)} style={{ width: "100%", marginTop: 16, background: "transparent", border: `1px dashed ${darkMode ? "#334155" : "#cbd5e1"}`, borderRadius: 10, color: darkMode ? "#475569" : "#94a3b8", padding: "10px", cursor: "pointer", fontSize: 13 }}>
                 {mostrarDescartados ? "🙈 Ocultar descartados" : `👁 Ver descartados (${Object.values(descartados).filter(Boolean).length})`}
