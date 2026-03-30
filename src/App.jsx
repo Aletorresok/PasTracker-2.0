@@ -229,10 +229,9 @@ async function saveStorage(key, val) {
       })
       if (rows.length) await supabase.from('pas_historial').insert(rows)
     }
-    if (key === 'pas_casos') {
-      await supabase.from('pas_casos').delete().neq('pas_id', -1)
-      const rows = []
-      Object.entries(val).forEach(([pas_id, casosList]) => {
+if (key === 'pas_casos') {
+  const rows = []
+  Object.entries(val).forEach(([pas_id, casosList]) => {
         casosList.forEach(c => rows.push({
           pas_id: Number(pas_id), caso_id: c.id, asegurado: c.asegurado, estado: c.estado, nota: c.nota,
           fecha_derivacion: c.fecha_derivacion, fecha_contacto_asegurado: c.fecha_contacto_asegurado,
@@ -255,7 +254,17 @@ async function saveStorage(key, val) {
           fecha_factura: c.fecha_factura || null, fecha_cobro_honorarios: c.fecha_cobro_honorarios || null,
         }))
       })
-      if (rows.length) await supabase.from('pas_casos').insert(rows)
+     if (rows.length) {
+        await supabase.from('pas_casos').upsert(rows, { onConflict: 'caso_id' })
+      }
+      const casosIds = rows.map(r => r.caso_id)
+      const allPasIds = Object.keys(val).map(Number)
+      if (allPasIds.length) {
+        const { data: existing } = await supabase.from('pas_casos').select('caso_id').in('pas_id', allPasIds)
+        const toDelete = (existing || []).map(r => r.caso_id).filter(id => !casosIds.includes(id))
+        if (toDelete.length) await supabase.from('pas_casos').delete().in('caso_id', toDelete)
+      }
+    }
     }
     if (key === 'pas_derivadores') {
       await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
