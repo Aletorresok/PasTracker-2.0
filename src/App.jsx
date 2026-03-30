@@ -100,9 +100,7 @@ async function syncCasoToAgenda(caso, pasNombre) {
   try {
     const row = buildAgendaCaso(caso, pasNombre);
     const { error } = await supabase.from("casos").upsert(row, { onConflict: "id" });
-    if (error && error.code !== 'PGRST116' && !error.message?.includes('404')) {
-      console.error("[sync→AgendaLegal] upsert error:", error);
-    }
+    if (error) console.error("[sync→AgendaLegal] upsert error:", error);
   } catch (e) {
     console.error("[sync→AgendaLegal] exception:", e);
   }

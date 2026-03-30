@@ -396,8 +396,19 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
       descripcion,
       fecha: new Date().toISOString(),
     };
+    // Guardar en PAS Tracker
     const { data } = await supabase.from("acciones").insert(nueva).select().single();
     if (data) setAcciones(prev => [data, ...prev]);
+
+    // Sincronizar a Agenda Legal (misma base de datos, caso_id con prefijo pas_)
+    try {
+      await supabase.from("acciones").insert({
+        ...nueva,
+        caso_id: `pas_${caso.id}`,
+      });
+    } catch (e) {
+      console.error("[sync→AgendaLegal] accion error:", e);
+    }
   };
 
   // ── Feature 7: Guardar negociación en Supabase ──
