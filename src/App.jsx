@@ -587,7 +587,12 @@ function PipelineBar({ estado }) {
 function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
   const [open, setOpen] = useState(false);
   const ei = estadoInfo(caso.estado);
-  const diasUlt = diasDesde(caso.fecha_ultimo_movimiento);
+  const ultimaAccionTs = caso.notas_log?.length
+  ? Math.max(...(caso.notas_log.map(n => n.ts || 0)))
+  : null;
+const diasUlt = ultimaAccionTs
+  ? diasDesde(new Date(ultimaAccionTs).toISOString().slice(0, 10))
+  : diasDesde(caso.fecha_ultimo_movimiento);
   const hoyStr = new Date().toISOString().slice(0, 10);
   const tieneRecordatorio = caso.recordatorio && caso.recordatorio >= hoyStr;
   const recordatorioVencido = caso.recordatorio && caso.recordatorio < hoyStr;
