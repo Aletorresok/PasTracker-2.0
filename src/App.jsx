@@ -129,7 +129,7 @@ async function loadStorage(key) {
     }
     if (key === 'pas_casos') {
       const { data } = await supabase.from('pas_casos').select('*')
-      if (!data) return null
+      if (!data || data.length === 0) return null
       const result = {}
       data.forEach(row => {
         if (!result[row.pas_id]) result[row.pas_id] = []
@@ -229,9 +229,9 @@ async function saveStorage(key, val) {
       })
       if (rows.length) await supabase.from('pas_historial').insert(rows)
     }
-if (key === 'pas_casos') {
-  const rows = []
-  Object.entries(val).forEach(([pas_id, casosList]) => {
+    if (key === 'pas_casos') {
+      const rows = []
+      Object.entries(val).forEach(([pas_id, casosList]) => {
         casosList.forEach(c => rows.push({
           pas_id: Number(pas_id), caso_id: c.id, asegurado: c.asegurado, estado: c.estado, nota: c.nota,
           fecha_derivacion: c.fecha_derivacion, fecha_contacto_asegurado: c.fecha_contacto_asegurado,
@@ -254,7 +254,7 @@ if (key === 'pas_casos') {
           fecha_factura: c.fecha_factura || null, fecha_cobro_honorarios: c.fecha_cobro_honorarios || null,
         }))
       })
-     if (rows.length) {
+      if (rows.length) {
         await supabase.from('pas_casos').upsert(rows, { onConflict: 'caso_id' })
       }
       const casosIds = rows.map(r => r.caso_id)
@@ -264,7 +264,6 @@ if (key === 'pas_casos') {
         const toDelete = (existing || []).map(r => r.caso_id).filter(id => !casosIds.includes(id))
         if (toDelete.length) await supabase.from('pas_casos').delete().in('caso_id', toDelete)
       }
-    }
     }
     if (key === 'pas_derivadores') {
       await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
@@ -310,7 +309,6 @@ async function deletePasManual(id) {
     await supabase.from('pas_manuales').delete().eq('id', id);
   } catch (e) { console.error('[pas_manuales] delete error:', e); }
 }
-
 
 const IS = { width: "100%", background: "#1e293b", border: "1px solid #2d3f55", borderRadius: 8, color: "#f1f5f9", padding: "8px 12px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 const IS_LIGHT = { width: "100%", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 8, color: "#1e293b", padding: "8px 12px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
@@ -517,7 +515,6 @@ function CasoModal({ pasNombre, casoEdit, onClose, onSave, darkMode }) {
           <textarea value={d.nota} onChange={set("nota")} rows={2} placeholder="Compañía, número de siniestro, observaciones..." style={{ ...iStyle, resize: "vertical" }} />
         </label>
 
-        {/* HISTORIAL DE ACCIONES */}
         <div style={{ marginBottom: 20 }}>
           <span style={lStyle}>Historial de acciones</span>
           {(d.notas_log || []).length > 0 && (
@@ -628,7 +625,6 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
       {open && (
         <div style={{ borderTop: `1px solid ${bor}`, padding: "12px 14px", background: bg2 }}>
           {caso.fecha_siniestro && <div style={{ fontSize: 11, color: mut, marginBottom: 8 }}>📅 Siniestro: {fmtDate(caso.fecha_siniestro)}</div>}
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
             {[
               { l: "Derivación",    v: fmtDate(caso.fecha_derivacion) },
@@ -642,11 +638,10 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
               </div>
             ) : null)}
           </div>
-
           {logOrdenado.length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 9, color: mut, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>Historial de acciones</div>
-              {logOrdenado.slice(0, 3).map((n, i) => (
+              {logOrdenado.slice(0, 3).map((n) => (
                 <div key={n.ts} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                   <div style={{ fontSize: 10, color: mut, whiteSpace: "nowrap", marginTop: 1 }}>{fmtDate(n.fecha)}</div>
                   <div style={{ fontSize: 12, color: sub }}>{n.texto}</div>
@@ -655,7 +650,6 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
               {logOrdenado.length > 3 && <div style={{ fontSize: 11, color: mut }}>+{logOrdenado.length - 3} más...</div>}
             </div>
           )}
-
           <div style={{ display: "flex", gap: 7 }}>
             <button onClick={() => onDetalle(caso)} style={{ flex: 2, background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#818cf8", padding: "8px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>📋 Ver detalle</button>
             <button onClick={() => onEdit(caso)} style={{ flex: 1, background: darkMode ? "#1e293b" : "#f1f5f9", border: `1px solid ${bor}`, borderRadius: 8, color: sub, padding: "8px", cursor: "pointer", fontSize: 12 }}>✏️ Editar</button>
@@ -1173,6 +1167,7 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
           </div>
         </button>
       </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         <StatCard label="Contactados" value={contactados} color="#6366f1" sub={`de ${pas.length}`} dark={darkMode} />
         <StatCard label="Positivos" value={positivos} color="#22c55e" dark={darkMode} />
@@ -1458,17 +1453,53 @@ export default function App() {
   const [darkMode, setDarkMode]     = useState(true);
   const [descartados, setDescartados] = useState({});
   const [pasManuales, setPasManuales] = useState([]);
+  const [autobackupFecha, setAutobackupFecha] = useState(() => localStorage.getItem('pastracker_autobackup_fecha') || null);
   const PER_PAGE = 40;
 
   useEffect(() => {
     loadStorage("pas_lista").then(l => l && setPas(l));
     loadStorage("pas_historial").then(h => h && setHistorial(h));
-    loadStorage("pas_casos").then(c => c && setCasos(c));
+    loadStorage("pas_casos").then(c => {
+      if (c && Object.keys(c).length > 0) {
+        setCasos(c);
+      } else {
+        try {
+          const raw = localStorage.getItem('pastracker_autobackup');
+          if (raw) {
+            const b = JSON.parse(raw);
+            if (b.casos && Object.keys(b.casos).length > 0) {
+              setCasos(b.casos);
+              console.warn('[autobackup] Supabase vacío — restaurando backup local del', b.fecha);
+            }
+          }
+        } catch {}
+      }
+    });
     loadStorage("pas_derivadores").then(d => d && setDerivadores(d));
     loadStorage("pas_recordatorios").then(r => r && setRecordatorios(r));
     loadStorage("pas_descartados").then(d => d && setDescartados(d));
     loadStorage("pas_manuales").then(m => m && setPasManuales(m));
   }, []);
+
+  const autoBackup = useCallback((casosData) => {
+    try {
+      const backup = {
+        version: 1,
+        fecha: new Date().toISOString(),
+        historial,
+        casos: casosData,
+        derivadores,
+        recordatorios,
+        descartados,
+      };
+      localStorage.setItem('pastracker_autobackup', JSON.stringify(backup));
+      const fecha = new Date().toISOString();
+      localStorage.setItem('pastracker_autobackup_fecha', fecha);
+      setAutobackupFecha(fecha);
+    } catch (e) {
+      console.warn('[autobackup] error:', e);
+    }
+  }, [historial, derivadores, recordatorios, descartados]);
 
   const handleFile = useCallback(e => {
     const file = e.target.files[0]; if (!file) return;
@@ -1503,13 +1534,14 @@ export default function App() {
     const updated = { ...casos, [pasId]: list };
     setCasos(updated);
     await saveStorage("pas_casos", updated);
+    autoBackup(updated);
 
     const nombre = pasNombre || (pas.find(p => p.id === pasId)?.nombre) || "";
     await Promise.all(list.map(c => syncCasoToAgenda(c, nombre)));
     const ids    = new Set(list.map(c => c.id));
     const borrados = prev.filter(c => !ids.has(c.id));
     await Promise.all(borrados.map(c => deleteCasoFromAgenda(c.id)));
-  }, [casos, pas]);
+  }, [casos, pas, autoBackup]);
 
   const handleToggleDerivador = useCallback(async (pasId) => {
     const updated = { ...derivadores, [pasId]: !derivadores[pasId] };
@@ -1635,6 +1667,10 @@ export default function App() {
     { k: "portal",      l: "🔑 Portal PAS" },
   ];
 
+  const backupLabel = autobackupFecha
+    ? `💾 ${new Date(autobackupFecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+    : '💾';
+
   return (
     <div style={{ minHeight: "100vh", background: bg, color: textColor, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
 
@@ -1656,7 +1692,9 @@ export default function App() {
               <button onClick={() => setDarkMode(d => !d)} title={darkMode ? "Modo claro" : "Modo oscuro"} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>
                 {darkMode ? "☀️" : "🌙"}
               </button>
-              <button onClick={handleBackup} title="Descargar backup" style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>💾</button>
+              <button onClick={handleBackup} title={autobackupFecha ? `Último autobackup: ${new Date(autobackupFecha).toLocaleString('es-AR')}` : "Descargar backup"} style={{ background: darkMode ? "#1e293b" : "#e2e8f0", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: autobackupFecha ? 12 : 16, fontWeight: 700, color: autobackupFecha ? "#22c55e" : subColor, whiteSpace: "nowrap" }}>
+                {backupLabel}
+              </button>
               <label title="Restaurar backup" style={{ background: darkMode ? "#1e293b" : "#e2e8f0", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16 }}>
                 📂
                 <input type="file" accept=".json" onChange={handleRestore} style={{ display: "none" }} />
@@ -1719,7 +1757,7 @@ export default function App() {
         )}
 
         {!loading && pas.length > 0 && mainTab === "dashboard" && (
-          <TabDashboard pas={pas} historial={historial} casos={casos} derivadores={derivadores} recordatorios={recordatorios} darkMode={darkMode} pasManuales={pasManuales} onGoToClientes={(filtro) => { setMainTab("clientes"); }} />
+          <TabDashboard pas={pas} historial={historial} casos={casos} derivadores={derivadores} recordatorios={recordatorios} darkMode={darkMode} pasManuales={pasManuales} onGoToClientes={() => setMainTab("clientes")} />
         )}
 
         {!loading && pas.length > 0 && mainTab === "contactos" && (
