@@ -173,12 +173,17 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
   const [acciones, setAcciones] = useState([]);
   const [loadingAcciones, setLoadingAcciones] = useState(false);
 
-  // ── Cargar handle de carpeta desde sessionStorage (persiste en sesión) ──
+  // ── Restaurar handle desde cache en memoria al montar ──
+  // El File System Access API no permite serializar handles a disco,
+  // pero _dirHandleCache los mantiene en memoria mientras la app esté abierta.
+  // Si el usuario recarga la página deberá re-vincular manualmente.
   useEffect(() => {
-    const stored = sessionStorage.getItem(`dirHandle_${caso.id}`);
-    // No podemos serializar handles, pero sí intentamos reabrir si hay path guardado
-    // El usuario deberá re-autorizar si recarga. Esto es limitación del File System Access API.
-  }, [caso.id]);
+    const cached = _dirHandleCache[caso.id];
+    if (cached) {
+      setDirHandle(cached);
+      leerArchivos(cached);
+    }
+  }, [caso.id, leerArchivos]);
 
   // ── Feature 11: Cargar acciones desde Supabase ──
   useEffect(() => {
@@ -255,7 +260,7 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
 
       const nuevaCarpeta = await dirBase.getDirectoryHandle(carpetaFinal, { create: true });
       setDirHandle(nuevaCarpeta);
-      _dirHandleCache[caso.id] = dir; // o nuevaCarpeta
+      _dirHandleCache[caso.id] = nuevaCarpeta;
       const path = carpetaFinal;
       setCarpetaPath(path);
 
@@ -281,6 +286,12 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
         return;
       }
       setDirHandle(dir);
+      _dirHandleCache[caso.id] = dir;
+      // Guardar el nombre de la carpeta vinculada en Supabase
+      const path = dir.name;
+      setCarpetaPath(path);
+      await supabase.from("pas_casos").update({ carpeta_path: path }).eq("caso_id", caso.id);
+      onUpdate?.({ ...caso, carpeta_path: path });
       await leerArchivos(dir);
       setToast({ msg: "Carpeta vinculada. Archivos cargados.", type: "success" });
     } catch (e) {
@@ -311,8 +322,9 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
         const extOrig = getExtension(archivoEntry.nombre) || ".jpg";
         nuevoNombre = `FOTO_${nextN}${extOrig}`;
       } else {
-        // Documento único — siempre .pdf
-        nuevoNombre = `${tipo}.pdf`;
+        // Preservar la extensión original del archivo
+        const extOrig = getExtension(archivoEntry.nombre) || ".pdf";
+        nuevoNombre = `${tipo}${extOrig}`;
       }
 
       // Leer contenido original
@@ -461,43 +473,53 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       
       const margin = 20;
-      let y = 25; // Margen superior
+      const contentWidth = 170; // A4 ancho útil con márgenes de 20mm
+      let y = 25;
 
-      // 1. TÍTULO (Dos líneas como tu modelo)
+      // 1. TÍTULO — "RECLAMO EXTRAJUDICIAL" bold subrayado (igual al Word)
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
-      doc.text("RECLAMO", margin, y);
-      y += 6;
-      doc.text("EXTRAJUDICIAL", margin, y);
+      const titulo = "RECLAMO EXTRAJUDICIAL";
+      doc.text(titulo, margin, y);
+      const tituloAncho = doc.getTextWidth(titulo);
+      doc.setLineWidth(0.4);
+      doc.line(margin, y + 1, margin + tituloAncho, y + 1);
 
       // 2. COMPAÑÍA
-      y += 15;
+      y += 12;
       const compania = (caso.compania || "RAZON SOCIAL ASEGURADORA").toUpperCase();
       doc.setFont("helvetica", "normal");
       doc.text(compania, margin, y);
-      y += 6;
+
+      // 3. "Reclamo de Terceros:"
+      y += 8;
       doc.text("Reclamo de Terceros:", margin, y);
 
-      // 3. CUERPO (Con tus datos y los del asegurado)
-      y += 15;
+      // 4. CUERPO
+      y += 12;
       doc.setFontSize(11);
-      
+
       const fechaSiniestro = formatoFecha(caso.fecha_siniestro || caso.fecha_derivacion);
       const nombreCompleto = (caso.asegurado || "NOMBRE NO DISPONIBLE").toUpperCase();
 
       const cuerpo = `Alexis Torres Gaveglio, abogado, inscripto al T°142 F°636 C.P.A.C.F y al L° IV F° 20 del C.A.M.G.R, en representación de ${nombreCompleto}, DNI ${dniEscrito.trim()} vengo a iniciar formal reclamo por el siniestro ocurrido el día ${fechaSiniestro}.`;
 
-      // Ajuste de texto para que no se salga de la hoja
-      const lineasCuerpo = doc.splitTextToSize(cuerpo, 170);
+      const lineasCuerpo = doc.splitTextToSize(cuerpo, contentWidth);
       doc.text(lineasCuerpo, margin, y);
 
-      // 4. ACOMPAÑA (Listado exacto sin viñetas)
-      y += (lineasCuerpo.length * 7) + 12;
+      // 5. "I. Acompaña:" — numeración romana bold
+      y += (lineasCuerpo.length * 6.5) + 12;
       doc.setFont("helvetica", "bold");
-      doc.text("Acompaña:", margin, y);
+      doc.setFontSize(12);
+      doc.text("I.", margin, y);
+      doc.text("Acompaña:", margin + 8, y);
 
-      y += 10;
+      // 6. Lista numerada con sangría
+      y += 9;
       doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const numMargin = margin + 6;
+      const itemMargin = margin + 14;
       const adjuntos = [
         "Denuncia administrativa",
         "Certificado de cobertura",
@@ -508,9 +530,10 @@ export default function CasoDetalle({ caso, pasId, darkMode, onUpdate, onClose }
         "Presupuesto"
       ];
 
-      adjuntos.forEach((item) => {
-        doc.text(item, margin, y);
-        y += 7; // Espaciado entre ítems
+      adjuntos.forEach((item, i) => {
+        doc.text(`${i + 1}.`, numMargin, y);
+        doc.text(item, itemMargin, y);
+        y += 7;
       });
 
       // --- PROCESO DE GUARDADO SEGURO EN CARPETA ---

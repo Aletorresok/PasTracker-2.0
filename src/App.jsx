@@ -197,6 +197,15 @@ async function loadStorage(key) {
       data.forEach(row => { result[row.pas_id] = row.activo })
       return result
     }
+    if (key === 'pas_manuales') {
+      const { data } = await supabase.from('pas_manuales').select('*')
+      if (!data) return []
+      return data.map(row => ({
+        id: row.id, nombre: row.nombre, mail: row.mail || "",
+        telefonos: row.telefonos || [], manual: true,
+        contacto: "", respuesta: "", seguimiento: "", prioridad: row.telefonos?.length > 0 ? "agendado" : "sin_tel"
+      }))
+    }
     if (key === 'pas_lista') {
       let allData = [];
       let from = 0;
@@ -286,7 +295,22 @@ async function saveStorage(key, val) {
   } catch (e) { console.error(e) }
 }
 
-// ── SHARED STYLES ─────────────────────────────────────────────────────────────
+// ── PAS MANUALES CRUD ─────────────────────────────────────────────────────────
+async function upsertPasManual(pas) {
+  try {
+    const row = { id: pas.id, nombre: pas.nombre, mail: pas.mail || null, telefonos: pas.telefonos || [] };
+    const { error } = await supabase.from('pas_manuales').upsert(row, { onConflict: 'id' });
+    if (error) console.error('[pas_manuales] upsert error:', error);
+  } catch (e) { console.error('[pas_manuales] exception:', e); }
+}
+
+async function deletePasManual(id) {
+  try {
+    await supabase.from('pas_manuales').delete().eq('id', id);
+  } catch (e) { console.error('[pas_manuales] delete error:', e); }
+}
+
+
 const IS = { width: "100%", background: "#1e293b", border: "1px solid #2d3f55", borderRadius: 8, color: "#f1f5f9", padding: "8px 12px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 const IS_LIGHT = { width: "100%", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 8, color: "#1e293b", padding: "8px 12px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 const LS = { fontSize: 11, color: "#64748b", marginBottom: 5, textTransform: "uppercase", letterSpacing: 1, display: "block" };
@@ -782,7 +806,7 @@ function PASCard({ pas, historial, derivadores, recordatorios, onContactar, onTo
 }
 
 // ── CLIENTE CARD ──────────────────────────────────────────────────────────────
-function ClienteCard({ pas, casos, onAddCaso, onEditCaso, onDeleteCaso, onDetalleCaso, expanded, onToggle, darkMode, filtroEstado }) {
+function ClienteCard({ pas, casos, onAddCaso, onEditCaso, onDeleteCaso, onDetalleCaso, expanded, onToggle, darkMode, filtroEstado, onEditPasManual, onDeletePasManual }) {
   const casosFiltrados = filtroEstado && filtroEstado !== "todos" ? casos.filter(c => c.estado === filtroEstado) : casos;
   const cobradoYo  = casos.reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
   const pendiente  = casos.filter(c => c.estado === "esperando_pago").reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
@@ -790,18 +814,27 @@ function ClienteCard({ pas, casos, onAddCaso, onEditCaso, onDeleteCaso, onDetall
   return (
     <div style={{ background: darkMode ? "#0f172a" : "#fff", border: `1px solid ${expanded ? "#22c55e77" : darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 13, marginBottom: 10, overflow: "hidden", transition: "border-color .2s" }}>
       <div onClick={onToggle} style={{ padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: "#22c55e18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🤝</div>
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: pas.manual ? "#6366f118" : "#22c55e18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{pas.manual ? "✏️" : "🤝"}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pas.nombre || "Sin nombre"}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 7 }}>
+            {pas.nombre || "Sin nombre"}
+            {pas.manual && <span style={{ fontSize: 10, color: "#818cf8", background: "#6366f122", border: "1px solid #6366f133", borderRadius: 4, padding: "1px 6px", fontWeight: 600, flexShrink: 0 }}>MANUAL</span>}
+          </div>
           <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
             {casos.length} caso{casos.length !== 1 ? "s" : ""}
             {activos > 0 && <span style={{ color: "#818cf8", marginLeft: 8 }}>· {activos} activo{activos > 1 ? "s" : ""}</span>}
             {casos.length === 0 && <span style={{ color: "#334155" }}> · sin casos aún</span>}
           </div>
         </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           {cobradoYo > 0 && <div style={{ fontSize: 15, fontWeight: 800, color: "#6366f1" }}>{fmtMoney(cobradoYo)}</div>}
           {pendiente > 0 && <div style={{ fontSize: 11, color: "#06b6d4", marginTop: 1 }}>{fmtMoney(pendiente)} pend.</div>}
+          {pas.manual && (
+            <div style={{ display: "flex", gap: 4 }} onClick={e => e.stopPropagation()}>
+              <button onClick={() => onEditPasManual(pas)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${darkMode ? "#334155" : "#e2e8f0"}`, background: "transparent", color: "#818cf8", cursor: "pointer" }}>✏️ Editar</button>
+              <button onClick={() => { if (window.confirm(`¿Borrar a ${pas.nombre}? Se eliminarán también sus casos.`)) onDeletePasManual(pas.id); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid #ef444433", background: "transparent", color: "#ef4444", cursor: "pointer" }}>🗑</button>
+            </div>
+          )}
         </div>
       </div>
       {expanded && (
@@ -823,8 +856,58 @@ function ClienteCard({ pas, casos, onAddCaso, onEditCaso, onDeleteCaso, onDetall
   );
 }
 
+// ── NUEVO PAS MANUAL MODAL ────────────────────────────────────────────────────
+function NuevoPASModal({ pasEdit, onClose, onSave, darkMode }) {
+  const [nombre, setNombre] = useState(pasEdit?.nombre || "");
+  const [mail,   setMail]   = useState(pasEdit?.mail   || "");
+  const [tel,    setTel]    = useState(pasEdit?.telefonos?.join(", ") || "");
+  const iStyle = darkMode ? IS : IS_LIGHT;
+  const lStyle = darkMode ? LS : LS_LIGHT;
+
+  const handleSave = () => {
+    if (!nombre.trim()) return;
+    const telefonos = tel.split(/[,\s]+/).map(t => t.replace(/\D/g, "")).filter(t => t.length >= 6);
+    const id = pasEdit?.id || `manual_${Date.now()}`;
+    onSave({ id, nombre: nombre.trim(), mail: mail.trim(), telefonos, manual: true, contacto: "", respuesta: "", seguimiento: "", prioridad: telefonos.length > 0 ? "agendado" : "sin_tel" });
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.78)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: darkMode ? "#0f172a" : "#fff", border: `1px solid ${darkMode ? "#334155" : "#e2e8f0"}`, borderRadius: 16, width: "100%", maxWidth: 420, padding: 28, boxShadow: "0 24px 60px #000b" }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: "#6366f1", letterSpacing: 3, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>PAS Manual</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#1e293b" }}>{pasEdit ? "Editar PAS" : "Agregar PAS"}</div>
+        </div>
+
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={lStyle}>Nombre completo *</span>
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: García Juan Carlos" style={iStyle} autoFocus />
+        </label>
+
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={lStyle}>Teléfono / WhatsApp</span>
+          <input value={tel} onChange={e => setTel(e.target.value)} placeholder="Ej: 1155443322" style={iStyle} />
+          <span style={{ fontSize: 11, color: darkMode ? "#475569" : "#94a3b8", marginTop: 4, display: "block" }}>Separar múltiples con coma</span>
+        </label>
+
+        <label style={{ display: "block", marginBottom: 20 }}>
+          <span style={lStyle}>Mail</span>
+          <input value={mail} onChange={e => setMail(e.target.value)} placeholder="Ej: juan@example.com" style={iStyle} type="email" />
+        </label>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: darkMode ? "#1e293b" : "#f1f5f9", border: `1px solid ${darkMode ? "#334155" : "#e2e8f0"}`, borderRadius: 10, color: darkMode ? "#94a3b8" : "#64748b", padding: "10px", cursor: "pointer", fontSize: 14 }}>Cancelar</button>
+          <button onClick={handleSave} disabled={!nombre.trim()} style={{ flex: 2, background: nombre.trim() ? "#6366f1" : "#1e293b", border: "none", borderRadius: 10, color: "white", padding: "10px", cursor: nombre.trim() ? "pointer" : "default", fontSize: 14, fontWeight: 700 }}>
+            {pasEdit ? "Guardar cambios ✓" : "Agregar PAS ✓"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TAB CLIENTES ──────────────────────────────────────────────────────────────
-function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
+function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, pasManuales, onAddPasManual, onEditPasManual, onDeletePasManual }) {
   const [modalPas, setModalPas] = useState(null);
   const [casoEdit, setCasoEdit]  = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -832,8 +915,17 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [casoDetalle, setCasoDetalle] = useState(null);
   const [pasIdDetalle, setPasIdDetalle] = useState(null);
+  const [modalNuevoPAS, setModalNuevoPAS] = useState(false);
+  const [pasManualEdit, setPasManualEdit] = useState(null);
 
-  const clientes = useMemo(() => pas.filter(p => derivadores[p.id]), [pas, derivadores]);
+  // PAS derivadores del Excel + todos los manuales (mezclados)
+  const clientes = useMemo(() => {
+    const derivs = pas.filter(p => derivadores[p.id]);
+    const manualesIds = new Set(pasManuales.map(p => p.id));
+    // evitar duplicados si un manual ya estuviera en el Excel
+    const soloDerivs = derivs.filter(p => !manualesIds.has(p.id));
+    return [...soloDerivs, ...pasManuales];
+  }, [pas, derivadores, pasManuales]);
 
   const filtered = useMemo(() => {
     if (!busqueda.trim()) return clientes;
@@ -892,10 +984,11 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
         </div>
       </div>
 
-      {/* Filtro por estado + buscador + exportar */}
+      {/* Filtro por estado + buscador + exportar + agregar manual */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="🔍  Buscar entre tus clientes PAS..."
           style={{ ...iStyle, flex: 1, minWidth: 180 }} />
+        <button onClick={() => { setPasManualEdit(null); setModalNuevoPAS(true); }} style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#818cf8", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>+ PAS manual</button>
         <button onClick={exportarExcel} style={{ background: "#22c55e22", border: "1px solid #22c55e44", borderRadius: 8, color: "#22c55e", padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>⬇ Exportar Excel</button>
       </div>
 
@@ -911,10 +1004,10 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
       {clientes.length === 0 && (
         <div style={{ textAlign: "center", padding: "44px 16px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: 12, border: `1px dashed ${darkMode ? "#1e293b" : "#e2e8f0"}` }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>☑️</div>
-          <div style={{ fontSize: 15, color: "#475569", fontWeight: 600 }}>Todavía no tenés PAS marcados como derivadores</div>
+          <div style={{ fontSize: 15, color: "#475569", fontWeight: 600 }}>Todavía no tenés clientes PAS</div>
           <div style={{ fontSize: 13, color: "#334155", marginTop: 8, lineHeight: 1.6 }}>
-            Andá a la pestaña <strong style={{ color: "#818cf8" }}>Contactos</strong>, buscá el PAS que te dijo que sí,<br />
-            y tildá la casilla <strong style={{ color: "#22c55e" }}>☑ Va a derivar casos</strong> que aparece a la izquierda del nombre.
+            Podés marcar un PAS del Excel como derivador en <strong style={{ color: "#818cf8" }}>Contactos</strong>,<br />
+            o usar el botón <strong style={{ color: "#818cf8" }}>+ PAS manual</strong> de arriba para agregar uno directamente.
           </div>
         </div>
       )}
@@ -928,13 +1021,23 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
           expanded={expandedId === p.id}
           onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
           darkMode={darkMode}
-          filtroEstado={filtroEstado} />
+          filtroEstado={filtroEstado}
+          onEditPasManual={p.manual ? pManual => { setPasManualEdit(pManual); setModalNuevoPAS(true); } : undefined}
+          onDeletePasManual={p.manual ? id => { onDeletePasManual(id); } : undefined} />
       ))}
 
       {modalPas && (
         <CasoModal pasNombre={modalPas.nombre} casoEdit={casoEdit} darkMode={darkMode}
           onClose={() => { setModalPas(null); setCasoEdit(null); }}
           onSave={data => handleSave(modalPas.id, data, modalPas.nombre)} />
+      )}
+
+      {modalNuevoPAS && (
+        <NuevoPASModal
+          pasEdit={pasManualEdit}
+          darkMode={darkMode}
+          onClose={() => { setModalNuevoPAS(false); setPasManualEdit(null); }}
+          onSave={data => { onAddPasManual(data); setModalNuevoPAS(false); setPasManualEdit(null); }} />
       )}
 
       {casoDetalle && (
@@ -945,7 +1048,7 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode }) {
             darkMode={darkMode}
             onUpdate={updated => {
               const cur = casos[pasIdDetalle] || [];
-              const pasNom = pas.find(p => p.id === pasIdDetalle)?.nombre || "";
+              const pasNom = [...pas, ...pasManuales].find(p => p.id === pasIdDetalle)?.nombre || "";
               onSaveCasos(pasIdDetalle, cur.map(c => c.id === updated.id ? updated : c), pasNom);
               setCasoDetalle(updated);
             }}
@@ -989,7 +1092,7 @@ function GraficoBarras({ datos, darkMode }) {
   );
 }
 
-function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkMode }) {
+function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkMode, pasManuales = [], onGoToClientes }) {
   const allCasos = useMemo(() => Object.values(casos).flat(), [casos]);
   const totalCobradoYo     = allCasos.reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
   const totalComisionesPAS = allCasos.reduce((s, c) => s + (Number(c.monto_comision_pas) || 0), 0);
@@ -1005,6 +1108,16 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
   const volverContactar    = pas.filter(p => (historial[p.id] || []).some(c => (c.resultados || [c.resultado]).includes("volver_contactar"))).length;
   const tasaRespuesta      = contactados > 0 ? Math.round(((positivos + negativos + neutros) / contactados) * 100) : 0;
   const tasaPositiva       = contactados > 0 ? Math.round((positivos / contactados) * 100) : 0;
+
+  // ── Métricas de cobro pendiente ──
+  // Honorarios míos pendientes: casos con honorarios facturados o no facturados pero con monto
+  const honorariosPendientes = allCasos
+    .filter(c => c.estado_honorarios !== "COBRADO" && (Number(c.monto_honorarios) > 0 || Number(c.monto_cobro_yo) > 0))
+    .reduce((s, c) => s + (Number(c.monto_honorarios) || Number(c.monto_cobro_yo) || 0), 0);
+  // Cobro pendiente del asegurado: casos en "esperando_pago" con monto asegurado cargado
+  const cobroAseguradoPendiente = allCasos
+    .filter(c => c.estado === "esperando_pago" && Number(c.monto_cobro_asegurado) > 0)
+    .reduce((s, c) => s + (Number(c.monto_cobro_asegurado) || 0), 0);
 
   const hoyStr = new Date().toISOString().slice(0, 10);
   const hoy = new Date();
@@ -1043,9 +1156,10 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
 
   // ── Ranking PAS ──
   const rankingPAS = useMemo(() => {
+    const todosLosPas = [...pas, ...pasManuales];
     return Object.entries(casos)
       .map(([pasId, casosList]) => {
-        const pasObj = pas.find(p => p.id === Number(pasId));
+        const pasObj = todosLosPas.find(p => String(p.id) === String(pasId));
         const cobrado = casosList.reduce((s, c) => s + (Number(c.monto_cobro_yo) || 0), 0);
         const total = casosList.length;
         const activos = casosList.filter(c => c.estado !== "cobrado").length;
@@ -1054,7 +1168,7 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
       .filter(p => p.total > 0)
       .sort((a, b) => b.cobrado - a.cobrado || b.total - a.total)
       .slice(0, 8);
-  }, [casos, pas]);
+  }, [casos, pas, pasManuales]);
 
   const maxCobrado = rankingPAS.length ? Math.max(...rankingPAS.map(p => p.cobrado), 1) : 1;
 
@@ -1080,6 +1194,24 @@ function TabDashboard({ pas, historial, casos, derivadores, recordatorios, darkM
         <StatCard label="Esperando cobro" value={fmtMoney(totalPendiente)} color="#06b6d4" dark={darkMode} />
         <StatCard label="Comisiones PAS" value={fmtMoney(totalComisionesPAS)} color="#eab308" dark={darkMode} />
         <StatCard label="Casos cobrados" value={cobrados} color="#22c55e" sub={`${enGestion} en gestión`} dark={darkMode} />
+      </div>
+
+      {/* ── Cobros pendientes clickeables ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+        <button onClick={onGoToClientes} style={{ all: "unset", cursor: "pointer", display: "block" }}>
+          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${honorariosPendientes > 0 ? "#6366f144" : darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 12, padding: "12px 14px", transition: "border-color .2s" }}>
+            <div style={{ fontSize: 10, color: darkMode ? "#475569" : "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>💰 Mis honorarios pendientes</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: honorariosPendientes > 0 ? "#6366f1" : darkMode ? "#334155" : "#94a3b8", lineHeight: 1.1 }}>{fmtMoney(honorariosPendientes || null)}</div>
+            <div style={{ fontSize: 11, color: "#6366f188", marginTop: 3 }}>Ver en Clientes →</div>
+          </div>
+        </button>
+        <button onClick={onGoToClientes} style={{ all: "unset", cursor: "pointer", display: "block" }}>
+          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${cobroAseguradoPendiente > 0 ? "#22c55e44" : darkMode ? "#1e293b" : "#e2e8f0"}`, borderRadius: 12, padding: "12px 14px", transition: "border-color .2s" }}>
+            <div style={{ fontSize: 10, color: darkMode ? "#475569" : "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>🕐 Cobro asegurados pend.</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: cobroAseguradoPendiente > 0 ? "#22c55e" : darkMode ? "#334155" : "#94a3b8", lineHeight: 1.1 }}>{fmtMoney(cobroAseguradoPendiente || null)}</div>
+            <div style={{ fontSize: 11, color: "#22c55e88", marginTop: 3 }}>Ver en Clientes →</div>
+          </div>
+        </button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         <StatCard label="Contactados" value={contactados} color="#6366f1" sub={`de ${pas.length}`} dark={darkMode} />
@@ -1375,6 +1507,7 @@ export default function App() {
   const [page, setPage]             = useState(0);
   const [darkMode, setDarkMode]     = useState(true);
   const [descartados, setDescartados] = useState({});
+  const [pasManuales, setPasManuales] = useState([]);
   const PER_PAGE = 40;
 
   useEffect(() => {
@@ -1384,6 +1517,7 @@ export default function App() {
     loadStorage("pas_derivadores").then(d => d && setDerivadores(d));
     loadStorage("pas_recordatorios").then(r => r && setRecordatorios(r));
     loadStorage("pas_descartados").then(d => d && setDescartados(d));
+    loadStorage("pas_manuales").then(m => m && setPasManuales(m));
   }, []);
 
   const handleFile = useCallback(e => {
@@ -1440,6 +1574,22 @@ export default function App() {
     const updated = { ...descartados, [pasId]: !descartados[pasId] };
     setDescartados(updated); await saveStorage("pas_descartados", updated);
   }, [descartados]);
+
+  const handleAddPasManual = useCallback(async (nuevoPas) => {
+    const updated = [...pasManuales.filter(p => p.id !== nuevoPas.id), nuevoPas];
+    setPasManuales(updated);
+    await upsertPasManual(nuevoPas);
+  }, [pasManuales]);
+
+  const handleDeletePasManual = useCallback(async (id) => {
+    setPasManuales(prev => prev.filter(p => p.id !== id));
+    await deletePasManual(id);
+    // Borrar también los casos asociados
+    const updated = { ...casos };
+    delete updated[id];
+    setCasos(updated);
+    await saveStorage("pas_casos", updated);
+  }, [pasManuales, casos]);
 
   const handleBackup = useCallback(() => {
     const backup = {
@@ -1630,7 +1780,7 @@ export default function App() {
         )}
 
         {!loading && pas.length > 0 && mainTab === "dashboard" && (
-          <TabDashboard pas={pas} historial={historial} casos={casos} derivadores={derivadores} recordatorios={recordatorios} darkMode={darkMode} />
+          <TabDashboard pas={pas} historial={historial} casos={casos} derivadores={derivadores} recordatorios={recordatorios} darkMode={darkMode} pasManuales={pasManuales} onGoToClientes={(filtro) => { setMainTab("clientes"); }} />
         )}
 
         {!loading && pas.length > 0 && mainTab === "contactos" && (
@@ -1690,7 +1840,8 @@ export default function App() {
         )}
 
         {!loading && pas.length > 0 && mainTab === "clientes" && (
-          <TabClientes pas={pas} casos={casos} derivadores={derivadores} onSaveCasos={handleSaveCasos} darkMode={darkMode} />
+          <TabClientes pas={pas} casos={casos} derivadores={derivadores} onSaveCasos={handleSaveCasos} darkMode={darkMode}
+            pasManuales={pasManuales} onAddPasManual={handleAddPasManual} onEditPasManual={handleAddPasManual} onDeletePasManual={handleDeletePasManual} />
         )}
 
         {mainTab === "portal" && (
