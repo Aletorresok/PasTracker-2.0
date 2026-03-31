@@ -142,8 +142,8 @@ async function loadStorage(key) {
         if (!result[row.pas_id]) result[row.pas_id] = []
         result[row.pas_id].push({
           id: row.caso_id, asegurado: row.asegurado, estado: row.estado, nota: row.nota,
-          fecha_derivacion: row.fecha_derivacion, fecha_contacto_asegurado: row.fecha_contacto_asegurado,
-          fecha_inicio_reclamo: row.fecha_inicio_reclamo, fecha_ultimo_movimiento: row.fecha_ultimo_movimiento,
+          fecha_derivacion: c.fecha_derivacion || null, fecha_contacto_asegurado: c.fecha_contacto_asegurado || null,
+fecha_inicio_reclamo: c.fecha_inicio_reclamo || null, fecha_ultimo_movimiento: c.fecha_ultimo_movimiento || null,
           monto_ofrecimiento: row.monto_ofrecimiento, monto_cobro_asegurado: row.monto_cobro_asegurado,
           monto_cobro_yo: row.monto_cobro_yo, monto_comision_pas: row.monto_comision_pas,
           recordatorio: row.recordatorio || null, notas_log: row.notas_log || [],
@@ -245,8 +245,11 @@ async function saveStorage(key, val) {
     if (key === 'pas_casos') {
       const rows = []
       Object.entries(val).forEach(([pas_id, casosList]) => {
-        casosList.forEach(c => rows.push({
-          pas_id: Number(pas_id), caso_id: c.id, asegurado: c.asegurado, estado: c.estado, nota: c.nota,
+        const pasIdNum = pas_id.toString().startsWith('manual_') ? null : Number(pas_id);
+        casosList.forEach(c => {
+          const casoIdNum = typeof c.id === 'string' && isNaN(Number(c.id)) ? null : Number(c.id);
+          rows.push({
+          pas_id: pasIdNum, caso_id: casoIdNum, asegurado: c.asegurado,
           fecha_derivacion: c.fecha_derivacion, fecha_contacto_asegurado: c.fecha_contacto_asegurado,
           fecha_inicio_reclamo: c.fecha_inicio_reclamo, fecha_ultimo_movimiento: c.fecha_ultimo_movimiento,
           monto_ofrecimiento: c.monto_ofrecimiento || null, monto_cobro_asegurado: c.monto_cobro_asegurado || null,
@@ -265,7 +268,8 @@ async function saveStorage(key, val) {
           porcentaje_honorarios: c.porcentaje_honorarios || null, monto_honorarios: c.monto_honorarios || null,
           estado_honorarios: c.estado_honorarios || 'NO_FACTURADO',
           fecha_factura: c.fecha_factura || null, fecha_cobro_honorarios: c.fecha_cobro_honorarios || null,
-        }))
+        });
+        });
       })
       if (rows.length) {
         await supabase.from('pas_casos').upsert(rows, { onConflict: 'caso_id' })
