@@ -276,37 +276,18 @@ async function saveStorage(key, val) {
       }
     }
     if (key === 'pas_derivadores') {
-      const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
+      const rows = Object.entries(val).map(([pas_id, activo]) => ({ pas_id: Number(pas_id), activo: !!activo }))
       if (rows.length) await supabase.from('pas_derivadores').upsert(rows, { onConflict: 'pas_id' })
-      const activeIds = rows.map(r => r.pas_id)
-      if (activeIds.length) {
-        await supabase.from('pas_derivadores').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
-      } else {
-        await supabase.from('pas_derivadores').delete().neq('pas_id', -1)
-      }
     }
     if (key === 'pas_recordatorios') {
       const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id, fecha]) => ({ pas_id: Number(pas_id), fecha_recordatorio: fecha }))
       if (rows.length) await supabase.from('pas_recordatorios').upsert(rows, { onConflict: 'pas_id' })
-      const activeIds = rows.map(r => r.pas_id)
-      if (activeIds.length) {
-        await supabase.from('pas_recordatorios').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
-      } else {
-        await supabase.from('pas_recordatorios').delete().neq('pas_id', -1)
-      }
     }
     if (key === 'pas_descartados') {
-      const rows = Object.entries(val).filter(([, v]) => v).map(([pas_id]) => ({ pas_id: Number(pas_id), activo: true }))
+      const rows = Object.entries(val).map(([pas_id, activo]) => ({ pas_id: Number(pas_id), activo: !!activo }))
       if (rows.length) await supabase.from('pas_descartados').upsert(rows, { onConflict: 'pas_id' })
-      const activeIds = rows.map(r => r.pas_id)
-      if (activeIds.length) {
-        await supabase.from('pas_descartados').delete().not('pas_id', 'in', `(${activeIds.join(',')})`)
-      } else {
-        await supabase.from('pas_descartados').delete().neq('pas_id', -1)
-      }
     }
     if (key === 'pas_lista') {
-      await supabase.from('pas_lista').delete().neq('pas_id', -1)
       const rows = val.map(p => ({
         pas_id: p.id, nombre: p.nombre, mail: p.mail,
         telefonos: p.telefonos, contacto: p.contacto,
@@ -314,7 +295,7 @@ async function saveStorage(key, val) {
       }))
       const CHUNK = 500;
       for (let i = 0; i < rows.length; i += CHUNK) {
-        await supabase.from('pas_lista').insert(rows.slice(i, i + CHUNK))
+        await supabase.from('pas_lista').upsert(rows.slice(i, i + CHUNK), { onConflict: 'pas_id' })
       }
     }
   } catch (e) { console.error(e) }
@@ -1006,7 +987,7 @@ function TabClientes({ pas, casos, derivadores, onSaveCasos, darkMode, pasManual
         <ClienteCard key={p.id} pas={p} casos={casos[p.id] || []}
           onAddCaso={() => { setModalPas(p); setCasoEdit(null); }}
           onEditCaso={c => { setModalPas(p); setCasoEdit(c); }}
-          onDeleteCaso={cid => onSaveCasos(p.id, (casos[p.id] || []).filter(c => c.id !== cid), p.nombre)}
+          onDeleteCaso={cid => { deleteCasoFromAgenda(cid); onSaveCasos(p.id, (casos[p.id] || []).filter(c => c.id !== cid), p.nombre); }}
           onDetalleCaso={c => { setCasoDetalle(c); setPasIdDetalle(p.id); }}
           expanded={expandedId === p.id}
           onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
@@ -1555,7 +1536,6 @@ export default function App() {
   }, [historial, modalPas, recordatorios]);
 
   const handleSaveCasos = useCallback(async (pasId, list, pasNombre) => {
-    const prev    = casos[pasId] || [];
     const updated = { ...casos, [pasId]: list };
     setCasos(updated);
     await saveStorage("pas_casos", updated);
@@ -1563,9 +1543,6 @@ export default function App() {
 
     const nombre = pasNombre || (pas.find(p => p.id === pasId)?.nombre) || "";
     await Promise.all(list.map(c => syncCasoToAgenda(c, nombre)));
-    const ids    = new Set(list.map(c => c.id));
-    const borrados = prev.filter(c => !ids.has(c.id));
-    await Promise.all(borrados.map(c => deleteCasoFromAgenda(c.id)));
   }, [casos, pas, autoBackup]);
 
   const handleToggleDerivador = useCallback(async (pasId) => {
