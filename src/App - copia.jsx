@@ -647,25 +647,9 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
           {logOrdenado.length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 9, color: mut, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>Historial de acciones</div>
-              {logOrdenado.slice(0, 3).map((n, idx) => (
-                <div 
-                  key={n.ts} 
-                  style={{ 
-                    display: "flex", 
-                    gap: 8, 
-                    marginBottom: 6,
-                    opacity: 0,
-                    transform: "translateX(-8px)",
-                    animation: `slideInAction 0.4s ease-out ${idx * 0.1}s forwards`
-                  }}
-                >
-                  <div style={{ 
-                    fontSize: 10, 
-                    color: idx === 0 ? "#00bcd4" : mut, 
-                    whiteSpace: "nowrap", 
-                    marginTop: 1,
-                    fontWeight: idx === 0 ? 600 : 400
-                  }}>{fmtDate(n.fecha)}</div>
+              {logOrdenado.slice(0, 3).map((n) => (
+                <div key={n.ts} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: mut, whiteSpace: "nowrap", marginTop: 1 }}>{fmtDate(n.fecha)}</div>
                   <div style={{ fontSize: 12, color: sub }}>{n.texto}</div>
                 </div>
               ))}
@@ -679,15 +663,6 @@ function CasoCard({ caso, onEdit, onDelete, onDetalle, darkMode }) {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes slideInAction {
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-      `}</style>
     </div>
   );
 }
